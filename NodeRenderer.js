@@ -22,6 +22,7 @@ export class NodeRenderer extends BaseRenderer {
         await super.initialize();
 
         this.volume = null;
+        this.volumeTemp = null;
 
         this.unlitPipeline = await this.initializeUnlitPipeline();
         this.volumePipeline = await this.initializeVolumePipeline();
@@ -103,9 +104,11 @@ export class NodeRenderer extends BaseRenderer {
         });
     }
 
-    async initializeVolume(voxelData) {
+    async initializeVolume(voxelData, tempData) {
         this.volume = new Volume(this.device, voxelData);
+        this.volumeTemp = new Volume(this.device, tempData)
         await this.volume.load();
+        await this.volumeTemp.load();
     }
 
     prepareNode(node) {
@@ -121,12 +124,14 @@ export class NodeRenderer extends BaseRenderer {
         var modelBindGroup = undefined;
 
         if (node.getComponentOfType(Volume)) {
+            // console.log(this.volumeTemp);
             modelBindGroup = this.device.createBindGroup({
                 layout: this.volumePipeline.getBindGroupLayout(1),
                 entries: [
                     { binding: 0, resource: { buffer: modelUniformBuffer } },
                     { binding: 1, resource: this.volume.getTextureSampler() },
                     { binding: 2, resource: this.volume.getTextureView() },
+                    { binding: 3, resource: this.volumeTemp.getTextureView() },
                 ],
             });
 

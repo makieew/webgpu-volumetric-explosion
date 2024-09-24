@@ -28,13 +28,14 @@ import { ImageLoader } from "./engine/loaders/ImageLoader.js";
 const canvas = document.querySelector('canvas');
 // VOXEL DATA
 const voxelData = await loadVoxelData("./data/frame_70.raw");
+const tempData = await loadVoxelData("./data/frame_70_temp.raw");
 // console.log(voxelData);
 
 //const renderer = await new EAMRenderer();
 const renderer = new NodeRenderer(canvas);
 
 await renderer.initialize();
-await renderer.initializeVolume(voxelData);
+await renderer.initializeVolume(voxelData, tempData);
 
 const scene = new Node();
 
