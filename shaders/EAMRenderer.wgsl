@@ -21,7 +21,7 @@ struct CameraUniforms {
 @group(1) @binding(2) var myTexture: texture_3d<f32>;
 @group(1) @binding(3) var tempTexture: texture_3d<f32>;
 
-const NumSteps = 16u; //256
+const NumSteps = 64u; //256
 
 fn unproject(position: vec2f, inverseMvp: mat4x4f, outFrom: ptr<function, vec3f>, outTo: ptr<function, vec3f>) {
     var nearPosition =  vec4f(position, 0.0, 1.0);
@@ -220,6 +220,65 @@ fn perlinNoiseMultiOctave(position: vec3f, frequency: i32, octaveCount: i32, per
   return value;
 }
 
+// Worley noise
+fn hashWorley(p3: vec3f) -> vec3f {
+  var p = fract(p3 * vec3f(0.1031,0.1030,0.0973));
+  p += dot(p, p.yxz + 33.33);
+  return fract((p3.xxy + p3.yxx)*p3.zyx);
+}
+
+fn worleyNoise(p: vec3f, power: f32) -> f32 {
+  var finalDist = 9999999.0;
+
+  for(var x: i32 = -1; x <= 1; x++){
+    for(var y: i32 = -1; y <= 1; y++){
+      for(var z: i32 = -1; z <= 1; z++){
+        let offset = vec3f(f32(x), f32(y), f32(z));
+        let dist = pow(distance(p, floor(p)+offset+hashWorley(floor(p)+offset)), power);
+        finalDist = min(finalDist, dist);
+      }
+    }
+  }
+  return finalDist;
+}
+
+// 4-sample bicubic interpolation
+fn powers(t: f32) -> vec4f {
+    return vec4f(1.0, t, t * t, t * t * t);
+}
+
+// Bicubic convolution
+var<private> m = mat4x4<f32>(
+    0.0 / 2.0,  2.0 / 2.0,  0.0 / 2.0,  0.0 / 2.0,
+   -1.0 / 2.0,  0.0 / 2.0,  1.0 / 2.0,  0.0 / 2.0,
+    2.0 / 2.0, -5.0 / 2.0,  4.0 / 2.0, -1.0 / 2.0,
+   -1.0 / 2.0,  3.0 / 2.0, -3.0 / 2.0,  1.0 / 2.0
+);
+
+fn bicubicInterpolation (uv: vec3f, texture: texture_3d<f32>) -> f32 {
+    let i = floor(uv);
+    let f = fract(uv);
+
+    let mx = m * powers(f.x);
+    let my = m * powers(f.y);
+    let mz = m * powers(f.z);
+
+    var c = 0.0;
+    let base = vec3<i32>(i);
+
+    // Loop over 4x4x4 grid points
+    for (var j = -1; j <= 2; j++) {
+        for (var k = -1; k <= 2; k++) {
+            for (var l = -1; l <= 2; l++) {
+                let offset = vec3<i32>(j, k, l);
+                let sampleValue = textureLoad(texture, base + offset, 0).r;
+                c += sampleValue * mx[j + 1] * my[k + 1] * mz[l + 1];
+            }
+        }
+    }
+    return c;
+}
+
 fn computeResult(tmin: f32, tmax: f32, rayFrom: vec3f, rayDir: vec3f) -> vec4f {
 
   var result = vec4f(0.0);
@@ -248,13 +307,16 @@ fn computeResult(tmin: f32, tmax: f32, rayFrom: vec3f, rayDir: vec3f) -> vec4f {
     var tempSample = textureSample(tempTexture, mySampler, texCoord).r;
 
     // noise
+    //let noiseFactor = worleyNoise(texCoord, 1.5); // p, scale
+    //let normFactor = noiseFactor;
+
     let noiseFactor = perlinNoiseMultiOctave(texCoord, frequency, octaveCount, persistence, lacunarity, seed);
     let normFactor = (noiseFactor + 1.0) * 0.5; // normalized values [-1, 1] -> [0, 1]
 
     //let smoothNoise = smoothstep(0.0, 1.0, noiseFactor);
 
-    densitySample *= 1.0 + normFactor * 0.5;
-    tempSample *= 1.0 + normFactor * 0.4;
+    densitySample *= 1.0 - normFactor * 0.5;
+    tempSample *= 1.0 - normFactor * 0.3;
 
     var color: vec3f = transferFunction(tempSample, densitySample);
 
@@ -262,6 +324,7 @@ fn computeResult(tmin: f32, tmax: f32, rayFrom: vec3f, rayDir: vec3f) -> vec4f {
     let alpha = result.a + (1.0 - result.a) * densitySample / f32(NumSteps) * opacity;
 
     result = vec4f(rgbTemp, alpha);
+
     // debug noise
     //result = vec4f(vec3f(normFactor), 1.0);
   }
