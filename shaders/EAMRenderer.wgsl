@@ -242,41 +242,12 @@ fn worleyNoise(p: vec3f, power: f32) -> f32 {
   return finalDist;
 }
 
-// 4-sample bicubic interpolation
-fn powers(t: f32) -> vec4f {
-    return vec4f(1.0, t, t * t, t * t * t);
-}
-
-// Bicubic convolution
-var<private> m = mat4x4<f32>(
-    0.0 / 2.0,  2.0 / 2.0,  0.0 / 2.0,  0.0 / 2.0,
-   -1.0 / 2.0,  0.0 / 2.0,  1.0 / 2.0,  0.0 / 2.0,
-    2.0 / 2.0, -5.0 / 2.0,  4.0 / 2.0, -1.0 / 2.0,
-   -1.0 / 2.0,  3.0 / 2.0, -3.0 / 2.0,  1.0 / 2.0
-);
-
-fn bicubicInterpolation (uv: vec3f, texture: texture_3d<f32>) -> f32 {
-    let i = floor(uv);
-    let f = fract(uv);
-
-    let mx = m * powers(f.x);
-    let my = m * powers(f.y);
-    let mz = m * powers(f.z);
-
-    var c = 0.0;
-    let base = vec3<i32>(i);
-
-    // Loop over 4x4x4 grid points
-    for (var j = -1; j <= 2; j++) {
-        for (var k = -1; k <= 2; k++) {
-            for (var l = -1; l <= 2; l++) {
-                let offset = vec3<i32>(j, k, l);
-                let sampleValue = textureLoad(texture, base + offset, 0).r;
-                c += sampleValue * mx[j + 1] * my[k + 1] * mz[l + 1];
-            }
-        }
-    }
-    return c;
+fn quasiCubicSampling (volume: texture_3d<f32>, sampler: sampler, u: vec3f) -> vec4f {
+    let R = vec3f(textureDimensions(volume));
+    var U = u * R + 0.5;
+    let F = fract(U);
+    U = floor(U) + F * F * (3.0 - 2.0 * F);
+    return textureSample(volume, sampler, (U - vec3<f32>(0.5)) / R);
 }
 
 fn computeResult(tmin: f32, tmax: f32, rayFrom: vec3f, rayDir: vec3f) -> vec4f {
@@ -304,7 +275,7 @@ fn computeResult(tmin: f32, tmax: f32, rayFrom: vec3f, rayDir: vec3f) -> vec4f {
     let texCoord: vec3f = (rayPos + 1.0) * 0.5;
 
     var densitySample = textureSample(myTexture, mySampler, texCoord).r;
-    var tempSample = textureSample(tempTexture, mySampler, texCoord).r;
+    var tempSample = quasiCubicSampling(tempTexture, mySampler, texCoord).r;
 
     // noise
     //let noiseFactor = worleyNoise(texCoord, 1.5); // p, scale
@@ -312,8 +283,6 @@ fn computeResult(tmin: f32, tmax: f32, rayFrom: vec3f, rayDir: vec3f) -> vec4f {
 
     let noiseFactor = perlinNoiseMultiOctave(texCoord, frequency, octaveCount, persistence, lacunarity, seed);
     let normFactor = (noiseFactor + 1.0) * 0.5; // normalized values [-1, 1] -> [0, 1]
-
-    //let smoothNoise = smoothstep(0.0, 1.0, noiseFactor);
 
     densitySample *= 1.0 - normFactor * 0.5;
     tempSample *= 1.0 - normFactor * 0.3;

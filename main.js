@@ -1,6 +1,5 @@
 // import { mat4 } from 'wgpu-matrix';
 import { loadVoxelData } from "./loaders.js";
-import { EAMRenderer } from "./EAMRenderer.js";
 import { NodeRenderer } from "./NodeRenderer.js";
 
 // TEST
