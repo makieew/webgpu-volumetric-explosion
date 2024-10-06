@@ -221,9 +221,9 @@ fn perlinNoiseMultiOctave(position: vec3f, frequency: i32, octaveCount: i32, per
 }
 
 // Worley noise
-fn hashWorley(p3: vec3f) -> vec3f {
-  var p = fract(p3 * vec3f(0.1031,0.1030,0.0973));
-  p += dot(p, p.yxz + 33.33);
+fn hashWorley(p: vec3f) -> vec3f {
+  var p3 = fract(p * vec3f(0.1031,0.1030,0.0973));
+  p3 += dot(p3, p3.yxz + 33.33);
   return fract((p3.xxy + p3.yxx)*p3.zyx);
 }
 
@@ -278,11 +278,11 @@ fn computeResult(tmin: f32, tmax: f32, rayFrom: vec3f, rayDir: vec3f) -> vec4f {
     var tempSample = quasiCubicSampling(tempTexture, mySampler, texCoord).r;
 
     // noise
-    //let noiseFactor = worleyNoise(texCoord, 1.5); // p, scale
-    //let normFactor = noiseFactor;
+    let noiseFactor = 1.0 - worleyNoise(texCoord * 16.0, 1.5); // p, power
+    let normFactor = noiseFactor;
 
-    let noiseFactor = perlinNoiseMultiOctave(texCoord, frequency, octaveCount, persistence, lacunarity, seed);
-    let normFactor = (noiseFactor + 1.0) * 0.5; // normalized values [-1, 1] -> [0, 1]
+    //let noiseFactor = perlinNoiseMultiOctave(texCoord, frequency, octaveCount, persistence, lacunarity, seed);
+    //let normFactor = (noiseFactor + 1.0) * 0.5; // normalized values [-1, 1] -> [0, 1]
 
     densitySample *= 1.0 - normFactor * 0.5;
     tempSample *= 1.0 - normFactor * 0.3;
