@@ -23,6 +23,7 @@ export class NodeRenderer extends BaseRenderer {
 
         this.volume = null;
         this.volumeTemp = null;
+        this.colorTexture = null;
 
         this.unlitPipeline = await this.initializeUnlitPipeline();
         this.volumePipeline = await this.initializeVolumePipeline();
@@ -34,8 +35,16 @@ export class NodeRenderer extends BaseRenderer {
         if (this.volume) { return this.volume };
     }
 
+    async fetchShader(url) {
+        const response = await fetch(new URL(url, import.meta.url));
+        if (!response.ok) {
+            throw new Error("Failed to load shader: ${url}");
+        }
+        return await response.text();
+    }
+
     async initializeUnlitPipeline() {
-        const code = await fetch(new URL("./shaders/UnlitRenderer.wgsl", import.meta.url)).then(response => response.text());
+        const code = await this.fetchShader("./shaders/UnlitRenderer.wgsl");
         const module = this.device.createShaderModule({ code });
 
         return this.device.createRenderPipelineAsync({
@@ -60,7 +69,14 @@ export class NodeRenderer extends BaseRenderer {
 
     async initializeVolumePipeline() {
         // transparency, blending, source alpha
-        const code = await fetch(new URL("./shaders/EAMRenderer.wgsl", import.meta.url)).then(response => response.text());
+        const main = await this.fetchShader("./shaders/EAMRenderer.wgsl");
+        const raymarching = await this.fetchShader("./shaders/raymarching.wgsl");
+        const perlin = await this.fetchShader("./shaders/perlin.wgsl");
+        const worley = await this.fetchShader("./shaders/worley.wgsl");
+        const curl = await this.fetchShader("./shaders/curl.wgsl");
+
+        const code = raymarching + '\n' + perlin + '\n' + worley + '\n' + curl + '\n' + main;
+
         const module = this.device.createShaderModule({ code });
 
         return this.device.createRenderPipeline({
@@ -106,7 +122,33 @@ export class NodeRenderer extends BaseRenderer {
 
     async initializeVolume(voxelData, tempData) {
         this.volume = new Volume(this.device, voxelData);
-        this.volumeTemp = new Volume(this.device, tempData)
+        this.volumeTemp = new Volume(this.device, tempData);
+
+        const pallete = new Uint8Array([
+            51, 51, 51, 255,    // Dark gray
+            77, 77, 77, 255,    // Lighter gray
+            102, 102, 102, 255, // Even lighter gray
+            230, 77, 77, 255,   // Orange
+            255, 230, 25, 255,  // Yellow
+            255, 255, 153, 255  // Bright yellow-white
+        ]);
+
+        const colorTextureDesc = {
+            size: [6],
+            dimension: "1d",
+            format: 'rgba8unorm',
+            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+        };
+
+        this.colorTexture = this.device.createTexture(colorTextureDesc);
+
+        this.device.queue.writeTexture(
+            { texture: this.colorTexture },
+            pallete,
+            { bytesPerRow: 6 * 4 },
+            { width: 6, height: 1, depthOrArrayLayers: 1 }
+        );
+
         await this.volume.load();
         await this.volumeTemp.load();
     }
@@ -117,7 +159,7 @@ export class NodeRenderer extends BaseRenderer {
         }
 
         const modelUniformBuffer = this.device.createBuffer({
-            size: 128,
+            size: 256, //128
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
 
@@ -132,11 +174,12 @@ export class NodeRenderer extends BaseRenderer {
                     { binding: 1, resource: this.volume.getTextureSampler() },
                     { binding: 2, resource: this.volume.getTextureView() },
                     { binding: 3, resource: this.volumeTemp.getTextureView() },
+                    { binding: 4, resource: this.colorTexture.createView() },
                 ],
             });
 
-            console.log("prepareNode if volume:");
-            console.log(this.volume);
+            // console.log("prepareNode if volume:");
+            // console.log(this.volume);
 
         } else {
             modelBindGroup = this.device.createBindGroup({
@@ -147,7 +190,7 @@ export class NodeRenderer extends BaseRenderer {
             });
         }
 
-        console.log(modelBindGroup);
+        // console.log(modelBindGroup);
 
         const gpuObjects = { modelUniformBuffer, modelBindGroup };
         this.gpuObjects.set(node, gpuObjects);
