@@ -26,8 +26,8 @@ import { ImageLoader } from "./engine/loaders/ImageLoader.js";
 
 const canvas = document.querySelector('canvas');
 // VOXEL DATA
-const voxelData = await loadVoxelData("./data/frame_70.raw");
-const tempData = await loadVoxelData("./data/frame_70_temp.raw");
+const voxelData = await loadVoxelData("./data/denstest.raw");
+const tempData = await loadVoxelData("./data/temptest.raw");
 // console.log(voxelData);
 
 //const renderer = await new EAMRenderer();
@@ -71,8 +71,8 @@ floor.addComponent(new Model({
 }));
 scene.addChild(floor);
 
-const volume = renderer.getVolume();
-const volumeNode = new Node();5
+const volume = renderer.getCurrentVolume();
+const volumeNode = new Node();
 volumeNode.addComponent(new Transform({ translation: [0, 4.70, 0], scale: [5, 5, 5], })); // volume should sit on top of the floor
 volumeNode.addComponent(volume);
 
@@ -87,7 +87,14 @@ function update(t, dt) {
 	});
 }
 
+let lastTime = performance.now();
+
 function render() {
+	const currTime = performance.now();
+	const deltaTime = currTime - lastTime;
+	lastTime = currTime;
+
+	renderer.updateFrame(deltaTime);
 	renderer.render(scene, camera);
 }
 

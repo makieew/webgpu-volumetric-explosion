@@ -7,13 +7,18 @@ export async function loadVoxelData(url) {
         }
 
         const fetchedData = new Uint8Array(await response.arrayBuffer());
+        const frameSize = 32 * 32 * 32;
+        const frameN = 70;
+
         const voxelData = [];
 
-        // Reconstructing the voxel data array
-        // TEST 1 FRAME
-        // TODO: 70 frames
+        for (let i = 0; i < frameN; i++) {
+            const frameStart = i * frameSize;
+            const frameEnd = frameStart + frameSize;
+            voxelData.push(fetchedData.slice(frameStart, frameEnd));
+        }
 
-        return fetchedData;
+        return voxelData;
 
     } catch (error) {
         console.log("Failed to fetch data: ", error);

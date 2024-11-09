@@ -16,23 +16,26 @@ export class NodeRenderer extends BaseRenderer {
 
     constructor(canvas) {
         super(canvas);
+        this.frame_i = 0;
+        this.frameInterval = 100; // ms
+        this.timeElapsed = 0;
     }
 
     async initialize() {
         await super.initialize();
 
-        this.volume = null;
-        this.volumeTemp = null;
+        this.volumes = [];
+        this.volumesTemp = [];
         this.colorTexture = null;
 
         this.unlitPipeline = await this.initializeUnlitPipeline();
-        this.volumePipeline = await this.initializeVolumePipeline();
+        this.volumesPipeline = await this.initializeVolumePipeline();
 
         this.recreateDepthTexture();
     }
 
-    getVolume() {
-        if (this.volume) { return this.volume };
+    getCurrentVolume() {
+        if (this.volumes) { return this.volumes[this.frame_i] };
     }
 
     async fetchShader(url) {
@@ -120,9 +123,20 @@ export class NodeRenderer extends BaseRenderer {
         });
     }
 
+    async initializeVolumeFrames(frameData) {
+        const frames = [];
+        // console.log(frameData);
+        for (const data of frameData) {
+            const frame = new Volume(this.device, data);
+            await frame.load();
+            frames.push(frame);
+        }
+        return frames;
+    }
+
     async initializeVolume(voxelData, tempData) {
-        this.volume = new Volume(this.device, voxelData);
-        this.volumeTemp = new Volume(this.device, tempData);
+        this.volumes = await this.initializeVolumeFrames(voxelData);
+        this.volumesTemp = await this.initializeVolumeFrames(tempData);
 
         const pallete = new Uint8Array([
             51, 51, 51, 255,    // Dark gray
@@ -148,13 +162,20 @@ export class NodeRenderer extends BaseRenderer {
             { bytesPerRow: 6 * 4 },
             { width: 6, height: 1, depthOrArrayLayers: 1 }
         );
+    }
 
-        await this.volume.load();
-        await this.volumeTemp.load();
+    updateFrame(deltaTime) {
+        this.timeElapsed += deltaTime;
+
+        if (this.timeElapsed >= this.frameInterval) {
+            this.frame_i = (this.frame_i + 1) % this.volumes.length;
+            // console.log(this.frame_i);
+            this.timeElapsed -= this.frameInterval;
+        }
     }
 
     prepareNode(node) {
-        if (this.gpuObjects.has(node)) {
+        if (this.gpuObjects.has(node) && !node.getComponentOfType(Volume)) {
             return this.gpuObjects.get(node);
         }
 
@@ -166,20 +187,20 @@ export class NodeRenderer extends BaseRenderer {
         var modelBindGroup = undefined;
 
         if (node.getComponentOfType(Volume)) {
-            // console.log(this.volumeTemp);
+            // console.log(this.frame_i);
             modelBindGroup = this.device.createBindGroup({
-                layout: this.volumePipeline.getBindGroupLayout(1),
+                layout: this.volumesPipeline.getBindGroupLayout(1),
                 entries: [
                     { binding: 0, resource: { buffer: modelUniformBuffer } },
-                    { binding: 1, resource: this.volume.getTextureSampler() },
-                    { binding: 2, resource: this.volume.getTextureView() },
-                    { binding: 3, resource: this.volumeTemp.getTextureView() },
+                    { binding: 1, resource: this.volumes[this.frame_i].getTextureSampler() },
+                    { binding: 2, resource: this.volumes[this.frame_i].getTextureView() },
+                    { binding: 3, resource: this.volumesTemp[this.frame_i].getTextureView() },
                     { binding: 4, resource: this.colorTexture.createView() },
                 ],
             });
 
             // console.log("prepareNode if volume:");
-            // console.log(this.volume);
+            // console.log(this.volumes);
 
         } else {
             modelBindGroup = this.device.createBindGroup({
@@ -217,7 +238,7 @@ export class NodeRenderer extends BaseRenderer {
 
         // VOLUME
         const cameraBindGroupVolume = this.device.createBindGroup({
-            layout: this.volumePipeline.getBindGroupLayout(0),
+            layout: this.volumesPipeline.getBindGroupLayout(0),
             entries: [
                 { binding: 0, resource: { buffer: cameraUniformBuffer } },
             ],
@@ -306,7 +327,7 @@ export class NodeRenderer extends BaseRenderer {
         this.unlitPass.end();
 
         // render pass for volume
-        this.volumePass = encoder.beginRenderPass({
+        this.volumesPass = encoder.beginRenderPass({
             colorAttachments: [{
                 view: this.context.getCurrentTexture().createView(),
                 // clearValue: [0, 0, 0, 1],   // black
@@ -321,10 +342,10 @@ export class NodeRenderer extends BaseRenderer {
             },
         });
 
-        this.volumePass.setPipeline(this.volumePipeline);
-        this.volumePass.setBindGroup(0, cameraBindGroupVolume);
+        this.volumesPass.setPipeline(this.volumesPipeline);
+        this.volumesPass.setBindGroup(0, cameraBindGroupVolume);
         this.renderNode(scene, camera, true);
-        this.volumePass.end();
+        this.volumesPass.end();
 
         this.device.queue.submit([encoder.finish()]);
     }
@@ -359,8 +380,8 @@ export class NodeRenderer extends BaseRenderer {
             this.device.queue.writeBuffer(modelUniformBuffer, 0, volumeMatrix);
             this.device.queue.writeBuffer(modelUniformBuffer, 64, inverseMvp);
 
-            this.volumePass.setBindGroup(1, modelBindGroup);
-            this.volumePass.draw(3);
+            this.volumesPass.setBindGroup(1, modelBindGroup);
+            this.volumesPass.draw(3);
 
         } else if (!isVolumePass) {
             // unlit pipeline for regular nodes
