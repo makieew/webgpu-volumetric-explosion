@@ -4,6 +4,11 @@ import { Camera } from "./engine/core/Camera.js";
 import { getLocalModelMatrix, getGlobalViewMatrix, getProjectionMatrix, getModels } from './engine/core/SceneUtils.js';
 import { BaseRenderer } from './engine/renderers/BaseRenderer.js';
 
+// bloom and emission 
+// unorm -> float
+// dat.gui
+// evalvacija
+
 const vertexBufferLayout = {
     arrayStride: 20,
     attributes: [
@@ -17,7 +22,7 @@ export class NodeRenderer extends BaseRenderer {
     constructor(canvas) {
         super(canvas);
         this.frame_i = 0;
-        this.frameInterval = 100; // ms
+        this.frameInterval = 100; // ms // 100
         this.timeElapsed = 0;
     }
 
@@ -106,20 +111,22 @@ export class NodeRenderer extends BaseRenderer {
                 }],
             },
             primitive: { topology: 'triangle-list' },
-            depthStencil: {
-                format: 'depth24plus',
-                depthWriteEnabled: true,
-                depthCompare: 'less',
-            },
         });
     }
 
     recreateDepthTexture() {
         this.depthTexture?.destroy();
+        this.depthTextureTest?.destroy();
         this.depthTexture = this.device.createTexture({
             format: 'depth24plus',
             size: [this.canvas.width, this.canvas.height],
-            usage: GPUTextureUsage.RENDER_ATTACHMENT,
+            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+        });
+
+        this.depthTextureTest = this.device.createTexture({
+            format: 'depth24plus',
+            size: [this.canvas.width, this.canvas.height],
+            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
         });
     }
 
@@ -138,6 +145,7 @@ export class NodeRenderer extends BaseRenderer {
         this.volumes = await this.initializeVolumeFrames(voxelData);
         this.volumesTemp = await this.initializeVolumeFrames(tempData);
 
+        // alpha za transfer
         const pallete = new Uint8Array([
             51, 51, 51, 255,    // Dark gray
             77, 77, 77, 255,    // Lighter gray
@@ -196,6 +204,7 @@ export class NodeRenderer extends BaseRenderer {
                     { binding: 2, resource: this.volumes[this.frame_i].getTextureView() },
                     { binding: 3, resource: this.volumesTemp[this.frame_i].getTextureView() },
                     { binding: 4, resource: this.colorTexture.createView() },
+                    { binding: 5, resource: this.depthTextureTest.createView() },
                 ],
             });
 
@@ -326,6 +335,12 @@ export class NodeRenderer extends BaseRenderer {
         this.renderNode(scene, camera);
         this.unlitPass.end();
 
+        encoder.copyTextureToTexture(
+            { texture: this.depthTexture },   // Src
+            { texture: this.depthTextureTest },    // Dst
+            { width: this.canvas.width, height: this.canvas.height, depthOrArrayLayers: 1 }  // Copy size
+        );
+
         // render pass for volume
         this.volumesPass = encoder.beginRenderPass({
             colorAttachments: [{
@@ -334,20 +349,16 @@ export class NodeRenderer extends BaseRenderer {
                 loadOp: 'load',
                 storeOp: 'store',
             }],
-            depthStencilAttachment: {
-                view: this.depthTexture.createView(),
-                // depthClearValue: 1,
-                depthLoadOp: 'load',
-                depthStoreOp: 'discard',
-            },
         });
 
         this.volumesPass.setPipeline(this.volumesPipeline);
         this.volumesPass.setBindGroup(0, cameraBindGroupVolume);
         this.renderNode(scene, camera, true);
         this.volumesPass.end();
+        
+        const commandBuffer = encoder.finish();
 
-        this.device.queue.submit([encoder.finish()]);
+        this.device.queue.submit([commandBuffer]);
     }
 
     renderNode(node, camera, isVolumePass = false, modelMatrix = mat4.create()) {

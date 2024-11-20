@@ -26,11 +26,10 @@ import { ImageLoader } from "./engine/loaders/ImageLoader.js";
 
 const canvas = document.querySelector('canvas');
 // VOXEL DATA
-const voxelData = await loadVoxelData("./data/denstest.raw");
-const tempData = await loadVoxelData("./data/temptest.raw");
+const voxelData = await loadVoxelData("./data/volumes_dens.raw");
+const tempData = await loadVoxelData("./data/volumes_temp.raw");
 // console.log(voxelData);
 
-//const renderer = await new EAMRenderer();
 const renderer = new NodeRenderer(canvas);
 
 await renderer.initialize();
@@ -73,7 +72,7 @@ scene.addChild(floor);
 
 const volume = renderer.getCurrentVolume();
 const volumeNode = new Node();
-volumeNode.addComponent(new Transform({ translation: [0, 4.70, 0], scale: [5, 5, 5], })); // volume should sit on top of the floor
+volumeNode.addComponent(new Transform({ translation: [0, 5, 0], scale: [5, 5, 5], })); // volume should sit on top of the floor
 volumeNode.addComponent(volume);
 
 scene.addChild(volumeNode);

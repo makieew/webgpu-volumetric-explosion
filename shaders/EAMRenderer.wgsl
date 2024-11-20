@@ -21,6 +21,7 @@ struct CameraUniforms {
 @group(1) @binding(2) var myTexture: texture_3d<f32>;
 @group(1) @binding(3) var tempTexture: texture_3d<f32>;
 @group(1) @binding(4) var colorTexture: texture_1d<f32>;
+@group(1) @binding(5) var depthTexture: texture_depth_2d;
 
 const NumSteps = 64u; //256
 
@@ -52,6 +53,7 @@ fn vertex_main(@builtin(vertex_index) VertexIndex : u32) -> VertexOutput {
 }
 
 fn transferFunction(tempSample: f32, densitySample: f32) -> vec3f {
+  // +alpha +skalacija slider
   let color = textureSample(colorTexture, mySampler, tempSample).rgb;
   return color * densitySample;
 }
@@ -81,6 +83,11 @@ fn computeResult(tmin: f32, tmax: f32, rayFrom: vec3f, rayDir: vec3f) -> vec4f {
   let lacunarity: f32 = 2;
   let seed: u32 = 0x578437adu;
 
+  // depth testing
+  let viewProjMatrix = camera.projectionMatrix * camera.viewMatrix;
+  var accumulatedColor: vec3f = vec3f(0.0);
+  var accumulatedAlpha: f32 = 0.0;
+
   for (var i = 0u; i < NumSteps; i++) {
 
     let t: f32 = tmin + f32(i) * stepSize;
@@ -88,37 +95,56 @@ fn computeResult(tmin: f32, tmax: f32, rayFrom: vec3f, rayDir: vec3f) -> vec4f {
     rayPos = rayFrom + t * rayDir;
     let texCoord: vec3f = (rayPos + 1.0) * 0.5;
 
+    // depth testing
+    let clipPos = viewProjMatrix * vec4(rayPos, 1.0);
+    let ndcPos = clipPos.xyz / clipPos.w;
+    let screenCoords = (ndcPos.xy * 0.5) + vec2(0.5);
+    let screenDepth = 0.5 * (ndcPos.z + 1.0);
+
+    let depthValue = textureSample(depthTexture, mySampler, screenCoords);
+    //let depthWeight = select(0.0, 1.0, screenDepth < depthValue);
+    let depthWeight = 1.0;
+
+    //
     var densitySample = textureSample(myTexture, mySampler, texCoord).r;
     var tempSample = quasiCubicSampling(tempTexture, mySampler, texCoord).r;
 
     // noise
     // CURL - FIX
-    //let curlV = curlNoise(texCoord, seed, 0.01);
+    //let curlV = curlNoise(texCoord * 16.0, seed, 0.01);
     //let normFactor = length(curlV); // normalize?
 
     // WORLEY
-    let noiseFactor = 1.0 - worleyNoise(texCoord * 16.0, 1.5); // p, power
-    let normFactor = (noiseFactor + 1.0) * 0.5; //TEST
+    // texCoord + curl vec3 (* skalacija) curl
+    //let noiseFactor = 1.0 - worleyNoise(texCoord * 16.0 + curlV * 5, 1.5); // p, power
+    //let normFactor = noiseFactor; //TEST
 
     // PERLIN
-    //let noiseFactor = perlinNoiseMultiOctave(texCoord, frequency, octaveCount, persistence, lacunarity, seed);
-    //let normFactor = (noiseFactor + 1.0) * 0.5; // normalized values [-1, 1] -> [0, 1]
+    let noiseFactor = perlinNoiseMultiOctave(texCoord, frequency, octaveCount, persistence, lacunarity, seed);
+    let normFactor = (noiseFactor + 1.0) * 0.5; // normalized values [-1, 1] -> [0, 1]
 
-    densitySample *= 1.0 - normFactor * 0.5;
+    densitySample *= 1.0 - normFactor * 0.5; // densSamp = normFactor
     tempSample *= 1.0 - normFactor * 0.3;
+
+   //densitySample = normFactor;
 
     var color: vec3f = transferFunction(tempSample, densitySample);
 
-    let rgbTemp = result.rgb + (1.0 - result.a) * color * densitySample / f32(NumSteps) * opacity;
-    let alpha = result.a + (1.0 - result.a) * densitySample / f32(NumSteps) * opacity;
+    //let rgbTemp = result.rgb + (1.0 - result.a) * color * densitySample / f32(NumSteps) * opacity;
+    //let alpha = result.a + (1.0 - result.a) * densitySample / f32(NumSteps) * opacity;
 
-    result = vec4f(rgbTemp, alpha);
+    //result = vec4f(rgbTemp, alpha);
+
+    let weightedDensity = densitySample * depthWeight;
+    accumulatedColor += (1.0 - accumulatedAlpha) * color * weightedDensity / f32(NumSteps) * opacity;
+    accumulatedAlpha += (1.0 - accumulatedAlpha) * weightedDensity / f32(NumSteps) * opacity;
 
     // debug noise
     //result = vec4f(vec3f(normFactor), 1.0);
   }
 
-  return result;
+  // was return result
+  return vec4f(accumulatedColor, accumulatedAlpha);
 }
 
 @fragment
