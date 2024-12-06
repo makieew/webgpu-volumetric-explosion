@@ -15,7 +15,8 @@ export class BaseRenderer {
         const adapter = await navigator.gpu.requestAdapter();
         const device = await adapter.requestDevice();
         const context = this.canvas.getContext('webgpu');
-        const format = navigator.gpu.getPreferredCanvasFormat();
+        //const format = navigator.gpu.getPreferredCanvasFormat();
+        const format = 'rgba8unorm';
         context.configure({ device, format });
 
         this.device = device;

@@ -41,7 +41,7 @@ const camera = new Node();
 camera.addComponent(new Transform({
     translation: [0, 1, 0],
 }));
-camera.addComponent(new Camera());
+camera.addComponent(new Camera({near: 0.1, far: 100}));
 camera.addComponent(new TurntableController(camera, canvas, { distance: 10, pitch: -0.1, }));
 
 scene.addChild(camera);
@@ -103,23 +103,3 @@ function resize({ displaySize: { width, height } }) {
 
 new ResizeSystem({ canvas, resize }).start();
 new UpdateSystem({ update, render }).start();
-
-// let last = Date.now();
-
-// const animationFrame = (() => {
-// 	const now = Date.now;
-//     const deltaTime = (now - last) / 1000;
-//     last = now;
-
-// 	return (timeCurr) => {
-// 		time.update();
-//         // controls.update({ keyboardInput, mouseInput }, time);
-// 		renderer.render();
-// 		window.requestAnimationFrame(animationFrame);
-// 	};
-// })();
-
-
-// window.requestAnimationFrame(animationFrame);
-
-// window.addEventListener("load", (event) => { main({ event: event }); });

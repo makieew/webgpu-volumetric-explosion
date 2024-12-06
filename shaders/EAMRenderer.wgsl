@@ -6,7 +6,7 @@ struct VertexOutput {
 
 struct Uniforms {
     volumeMatrix : mat4x4f,
-    inverseMvp : mat4x4f, // + matrika modela preveri
+    inverseMvp : mat4x4f,
 }
 
 struct CameraUniforms {
@@ -23,7 +23,7 @@ struct CameraUniforms {
 @group(1) @binding(4) var colorTexture: texture_1d<f32>;
 @group(1) @binding(5) var depthTexture: texture_depth_2d;
 
-const NumSteps = 64u; //256
+const NumSteps = 16u; //256
 
 
 @vertex
@@ -98,7 +98,7 @@ fn computeResult(tmin: f32, tmax: f32, rayFrom: vec3f, rayDir: vec3f) -> vec4f {
     // depth testing
     let clipPos = viewProjMatrix * vec4(rayPos, 1.0);
     let ndcPos = clipPos.xyz / clipPos.w;
-    let screenCoords = (ndcPos.xy * 0.5) + vec2(0.5);
+    let screenCoords = (ndcPos.xy * 0.5) + 0.5;
     let screenDepth = 0.5 * (ndcPos.z + 1.0);
 
     let depthValue = textureSample(depthTexture, mySampler, screenCoords);
