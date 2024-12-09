@@ -36,18 +36,20 @@ fn vertex_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 
 @fragment
 fn fragment_main(@location(0) texcoords : vec2f) -> @location(0) vec4f {
+
+    const gamma = 2.2;
+    const exposure = 1.0;
     
-    let original = textureSample(render_texture, texsampler, texcoords);
-    let bloom = textureSample(bloom_texture, texsampler, texcoords);
-    let intensity = 0.04;
+    let original = textureSample(render_texture, texsampler, texcoords).rgb;
+    let bloom = textureSample(bloom_texture, texsampler, texcoords).rgb;
+    let intensity = 1.0;
 
-    let out = original + bloom * intensity;
+    let hdrColor = original + bloom * intensity;
 
-    //tonemapp
+    // tone-mapping FIX
+    let toneMapped = vec3f(1.0) - exp(-hdrColor * exposure); // fix bit grayish
 
-    // TEST
-    // let overlay = vec4f(1.0, 0.0, 0.0, 0.2);
-    // let out = color * (1.0 - overlay.a) + overlay * overlay.a;
+    let result = pow(toneMapped, vec3f(1.0 / gamma)); // fix - everything lighter ??
 
-    return out;
+    return vec4f(hdrColor, 1.0);
 }

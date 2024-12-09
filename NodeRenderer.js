@@ -34,8 +34,11 @@ export class NodeRenderer extends BaseRenderer {
         this.volumes = [];
         this.volumesTemp = [];
 
+        this.bloomThreshold = 1.0;
+
         this.unlitPipeline = await this.initializeUnlitPipeline();
         this.volumePipeline = await this.initializeVolumePipeline();
+        this.brightPipeline = await this.initializeBrightPipeline();
         this.bloomDownsamplePipeline = await this.initializeBloomDownsamplePipeline();
         this.bloomUpsamplePipeline = await this.initializeBloomUpsamplePipeline();
         this.finalPipeline = await this.initializeFinalPipeline();
@@ -72,7 +75,7 @@ export class NodeRenderer extends BaseRenderer {
             fragment: {
                 module,
                 entryPoint: 'fragment',
-                targets: [{ format: this.format }],
+                targets: [{ format: this.HDRformat }],
             },
             depthStencil: {
                 format: 'depth24plus',
@@ -102,7 +105,7 @@ export class NodeRenderer extends BaseRenderer {
                 module,
                 entryPoint: 'fragment_main',
                 targets: [{
-                    format: this.format,
+                    format: this.HDRformat,
                     blend: {
                         color: {
                             srcFactor: 'src-alpha',
@@ -162,6 +165,18 @@ export class NodeRenderer extends BaseRenderer {
         });
     }
 
+    async initializeBrightPipeline() {
+        const code = await this.fetchShader("./shaders/bright.wgsl");
+        const module = this.device.createShaderModule({ code });
+
+        return this.device.createComputePipeline({
+            label: 'Bright',
+            layout: 'auto',
+            compute: { module, entryPoint: 'main' },
+            primitive: { topology: 'triangle-list' },
+        });
+    }
+
     async initializeFinalPipeline() {
         const code = await this.fetchShader("./shaders/final.wgsl");
         const module = this.device.createShaderModule({ code });
@@ -194,7 +209,7 @@ export class NodeRenderer extends BaseRenderer {
     recreateRenderTexture() {
         this.renderTexture?.destroy();
         this.renderTexture = this.device.createTexture({
-            format: this.format,
+            format: this.HDRformat,
             size: [this.canvas.width, this.canvas.height],
             usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
         });
@@ -206,7 +221,7 @@ export class NodeRenderer extends BaseRenderer {
             format: this.HDRformat, // hdr
             size: [this.canvas.width, this.canvas.height],
             mipLevelCount: Math.floor(Math.log2(Math.max(this.canvas.width, this.canvas.height))) + 1,
-            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING,
         });
     }
 
@@ -225,20 +240,20 @@ export class NodeRenderer extends BaseRenderer {
         this.volumes = await this.initializeVolumeFrames(voxelData);
         this.volumesTemp = await this.initializeVolumeFrames(tempData);
 
-        // alpha za transfer
-        const pallete = new Uint8Array([
-            51, 51, 51, 255,    // Dark gray
-            77, 77, 77, 255,    // Lighter gray
-            102, 102, 102, 255, // Even lighter gray
-            230, 77, 77, 255,   // Orange
-            255, 230, 25, 255,  // Yellow
-            255, 255, 153, 255  // Bright yellow-white
+        // HDR
+        const palette = new Float32Array([
+            0.2, 0.2, 0.2, 1.0,    // Dark gray
+            0.3, 0.3, 0.3, 1.0,    // Lighter gray
+            0.4, 0.4, 0.4, 1.0,    // Even lighter gray
+            2.0, 0.5, 0.5, 1.0,    // Orange
+            2.5, 2.0, 0.1, 1.0,    // Yellow 
+            3.0, 3.0, 1.2, 1.0     // Bright yellow-white
         ]);
 
         const colorTextureDesc = {
             size: [6],
             dimension: "1d",
-            format: this.format, // rgba8unorm
+            format: 'rgba32float',
             usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
         };
 
@@ -246,8 +261,8 @@ export class NodeRenderer extends BaseRenderer {
 
         this.device.queue.writeTexture(
             { texture: this.colorTexture },
-            pallete,
-            { bytesPerRow: 6 * 4 },
+            palette,
+            { bytesPerRow: 6 * 4 * 4}, // 6 * 4 ldr
             { width: 6, height: 1, depthOrArrayLayers: 1 }
         );
     }
@@ -401,14 +416,10 @@ export class NodeRenderer extends BaseRenderer {
         const bloomBindGroupsUpsample = [];
 
         for (let i = 0; i < mipLevels; i++) {
-            const resource = i === 0
-                ? this.renderTexture.createView()
-                : this.bloomTexture.createView({ baseMipLevel: i, mipLevelCount: 1 });
-
             const downsampleBindGroup = this.device.createBindGroup({
                 layout: this.bloomDownsamplePipeline.getBindGroupLayout(0),
                 entries: [
-                    { binding: 0, resource: resource },
+                    { binding: 0, resource: this.bloomTexture.createView({ baseMipLevel: i, mipLevelCount: 1 }) },
                     { binding: 1, resource: this.bloomSamplerDown },
                 ],
             });
@@ -446,7 +457,25 @@ export class NodeRenderer extends BaseRenderer {
             ],
         });
     }
- 
+
+    prepareBright() {
+        const thresholdBuffer = this.device.createBuffer({
+            size: 4,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        });
+
+        this.device.queue.writeBuffer(thresholdBuffer, 0, new Float32Array([this.bloomThreshold]));
+
+        this.brightBindGroup = this.device.createBindGroup({
+            layout: this.brightPipeline.getBindGroupLayout(0),
+            entries: [
+                { binding: 0, resource: { buffer: thresholdBuffer } },
+                { binding: 1, resource: this.renderTexture.createView() },
+                { binding: 2, resource: this.bloomTexture.createView({ baseMipLevel: 0, mipLevelCount: 1 }) },
+            ],
+        });
+    }
+
     render(scene, camera) {
         if (this.depthTexture.width !== this.canvas.width || this.depthTexture.height !== this.canvas.height) {
             this.recreateDepthTexture();
@@ -509,6 +538,22 @@ export class NodeRenderer extends BaseRenderer {
         this.device.queue.submit([volumeEncoder.finish()]);
 
         // render pass for extracting bright regions
+        const brightEncoder = this.device.createCommandEncoder({ label: "Bright", });
+        this.prepareBright();
+
+        const brightPass = brightEncoder.beginComputePass();
+
+        brightPass.setPipeline(this.brightPipeline);
+        brightPass.setBindGroup(0, this.brightBindGroup);
+
+        brightPass.dispatchWorkgroups(
+            Math.ceil(this.renderTexture.width / 8),
+            Math.ceil(this.renderTexture.height / 8),
+        );
+
+        brightPass.end();
+
+        this.device.queue.submit([brightEncoder.finish()]);
 
         // render pass for bloom
         const bloomEncoder = this.device.createCommandEncoder({ label: "Bloom", });

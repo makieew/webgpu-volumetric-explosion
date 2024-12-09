@@ -23,7 +23,7 @@ struct CameraUniforms {
 @group(1) @binding(4) var colorTexture: texture_1d<f32>;
 @group(1) @binding(5) var depthTexture: texture_depth_2d;
 
-const NumSteps = 16u; //256
+const NumSteps = 32u; //256
 
 
 @vertex
@@ -55,7 +55,9 @@ fn vertex_main(@builtin(vertex_index) VertexIndex : u32) -> VertexOutput {
 fn transferFunction(tempSample: f32, densitySample: f32) -> vec3f {
   // +alpha +skalacija slider
   let color = textureSample(colorTexture, mySampler, tempSample).rgb;
-  return color * densitySample;
+  let densColor = color * densitySample;
+
+  return densColor;
 }
 
 fn quasiCubicSampling (volume: texture_3d<f32>, sampler: sampler, u: vec3f) -> vec4f {
