@@ -37,11 +37,14 @@ fn vertex_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 fn fragment_main(@location(0) texcoords : vec2f) -> @location(0) vec4f {
     
     let texelSize = vec2f(1.0) / vec2f(textureDimensions(texture));
+    let offset = texelSize.xyxy * vec2f(-1, 1).xxyy;
 
-    var out = textureSample(texture, texsampler, texcoords + texelSize * vec2(-1.0, 1.0));
-    out += textureSample(texture, texsampler, texcoords + texelSize * vec2(1.0, 1.0));
-    out += textureSample(texture, texsampler, texcoords + texelSize * vec2(-1.0, -1.0));
-    out += textureSample(texture, texsampler, texcoords + texelSize * vec2(1.0, -1.0));
+    var result = 0.25 * (
+        textureSample(texture, texsampler, texcoords + offset.xy) +
+        textureSample(texture, texsampler, texcoords + offset.zy) +
+        textureSample(texture, texsampler, texcoords + offset.xw) +
+        textureSample(texture, texsampler, texcoords + offset.zw)
+    );
 
-    return out * 0.25;
+    return result;
 }

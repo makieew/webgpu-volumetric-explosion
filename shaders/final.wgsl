@@ -42,14 +42,13 @@ fn fragment_main(@location(0) texcoords : vec2f) -> @location(0) vec4f {
     
     let original = textureSample(render_texture, texsampler, texcoords).rgb;
     let bloom = textureSample(bloom_texture, texsampler, texcoords).rgb;
-    let intensity = 1.0;
 
-    let hdrColor = original + bloom * intensity;
+    let hdrColor = original + bloom;
 
     // tone-mapping FIX
-    let toneMapped = vec3f(1.0) - exp(-hdrColor * exposure); // fix bit grayish
+    let toneMapped = hdrColor * exposure; // fix bit grayish
 
-    let result = pow(toneMapped, vec3f(1.0 / gamma)); // fix - everything lighter ??
+    let result = vec4f(pow(toneMapped.rgb, vec3f(1.0 / gamma)), 1); // fix - everything lighter ??
 
     return vec4f(hdrColor, 1.0);
 }

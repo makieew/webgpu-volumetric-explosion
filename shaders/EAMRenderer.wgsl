@@ -22,6 +22,7 @@ struct CameraUniforms {
 @group(1) @binding(3) var tempTexture: texture_3d<f32>;
 @group(1) @binding(4) var colorTexture: texture_1d<f32>;
 @group(1) @binding(5) var depthTexture: texture_depth_2d;
+@group(1) @binding(6) var<uniform> opacity: f32;
 
 const NumSteps = 32u; //256
 
@@ -73,8 +74,6 @@ fn computeResult(tmin: f32, tmax: f32, rayFrom: vec3f, rayDir: vec3f) -> vec4f {
   var result = vec4f(0.0);
   var rayPos: vec3f = rayFrom;
 
-  let opacity: f32 = 20.0;  //make slider
-
   let dist: f32 = tmax - tmin;
   let stepSize: f32 = dist / f32(NumSteps);
 
@@ -113,22 +112,23 @@ fn computeResult(tmin: f32, tmax: f32, rayFrom: vec3f, rayDir: vec3f) -> vec4f {
 
     // noise
     // CURL - FIX
-    //let curlV = curlNoise(texCoord * 16.0, seed, 0.01);
-    //let normFactor = length(curlV); // normalize?
+    // let curlV = curlNoise(texCoord * 16.0, seed, 0.01);
+    // let normFactor = length(curlV); // normalize?
 
     // WORLEY
     // texCoord + curl vec3 (* skalacija) curl
-    //let noiseFactor = 1.0 - worleyNoise(texCoord * 16.0 + curlV * 5, 1.5); // p, power
-    //let normFactor = noiseFactor; //TEST
+    // let noiseFactor = 1.0 - worleyNoise(texCoord * 16.0 + curlV * 5, 1.5); // p, power
+    // let normFactor = noiseFactor; //TEST
 
     // PERLIN
     let noiseFactor = perlinNoiseMultiOctave(texCoord, frequency, octaveCount, persistence, lacunarity, seed);
-    let normFactor = (noiseFactor + 1.0) * 0.5; // normalized values [-1, 1] -> [0, 1]
+    let normFactor = noiseFactor; // normalized values [-1, 1] -> [0, 1]
 
-    densitySample *= 1.0 - normFactor * 0.5; // densSamp = normFactor
+    // densitySample *= 1.0 - normFactor * 0.5; // densSamp = normFactor
     tempSample *= 1.0 - normFactor * 0.3;
+    densitySample = mix(densitySample, densitySample * (1.0 - noiseFactor), 0.5);
 
-   //densitySample = normFactor;
+    // densitySample = normFactor;
 
     var color: vec3f = transferFunction(tempSample, densitySample);
 

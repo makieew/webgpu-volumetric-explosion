@@ -4,8 +4,7 @@ import { Camera } from "./engine/core/Camera.js";
 import { getLocalModelMatrix, getGlobalViewMatrix, getProjectionMatrix, getModels } from './engine/core/SceneUtils.js';
 import { BaseRenderer } from './engine/renderers/BaseRenderer.js';
 
-// bloom and emission 
-// unorm -> float
+// depth
 // dat.gui
 // evalvacija
 
@@ -22,7 +21,7 @@ export class NodeRenderer extends BaseRenderer {
     constructor(canvas) {
         super(canvas);
         this.frame_i = 0;
-        this.frameInterval = 100; // ms // 100
+        this.frameInterval = 100; // ms
         this.timeElapsed = 0;
     }
 
@@ -34,6 +33,8 @@ export class NodeRenderer extends BaseRenderer {
         this.volumes = [];
         this.volumesTemp = [];
 
+        this.volumeOpacity = 20.0;
+        this.bloomIntensity = 0.8;
         this.bloomThreshold = 1.0;
 
         this.unlitPipeline = await this.initializeUnlitPipeline();
@@ -159,7 +160,22 @@ export class NodeRenderer extends BaseRenderer {
             fragment: {
                 module,
                 entryPoint: 'fragment_main',
-                targets: [{ format: this.HDRformat }], //HDR
+                targets: [{ 
+                    format: this.HDRformat,
+                    blend: {
+                        color: {
+                            srcFactor: 'src-alpha',
+                            dstFactor: 'one',
+                            operation: 'add',
+                        },
+                        alpha: {
+                            srcFactor: 'one',
+                            dstFactor: 'one',
+                            operation: 'add',
+                        },
+                    },
+                    writeMask: GPUColorWrite.ALL,
+                }],
             },
             primitive: { topology: 'triangle-list' },
         });
@@ -218,9 +234,9 @@ export class NodeRenderer extends BaseRenderer {
     recreateBloomTexture() {
         this.bloomTexture?.destroy();
         this.bloomTexture = this.device.createTexture({
-            format: this.HDRformat, // hdr
+            format: this.HDRformat,
             size: [this.canvas.width, this.canvas.height],
-            mipLevelCount: Math.floor(Math.log2(Math.max(this.canvas.width, this.canvas.height))) + 1,
+            mipLevelCount: Math.ceil(Math.log2(Math.max(this.canvas.width, this.canvas.height))),
             usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING,
         });
     }
@@ -245,9 +261,9 @@ export class NodeRenderer extends BaseRenderer {
             0.2, 0.2, 0.2, 1.0,    // Dark gray
             0.3, 0.3, 0.3, 1.0,    // Lighter gray
             0.4, 0.4, 0.4, 1.0,    // Even lighter gray
-            2.0, 0.5, 0.5, 1.0,    // Orange
-            2.5, 2.0, 0.1, 1.0,    // Yellow 
-            3.0, 3.0, 1.2, 1.0     // Bright yellow-white
+            1.5, 0.4, 0.4, 1.0,    // Orange
+            1.8, 1.2, 0.1, 1.0,    // Yellow 
+            2.0, 2.0, 0.8, 1.0     // Bright yellow-white
         ]);
 
         const colorTextureDesc = {
@@ -283,6 +299,13 @@ export class NodeRenderer extends BaseRenderer {
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
 
+        const opacityBuffer = this.device.createBuffer({
+            size: 4,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        });
+
+        this.device.queue.writeBuffer(opacityBuffer, 0, new Float32Array([this.volumeOpacity]));
+
         const volumeBindGroup = this.device.createBindGroup({
             layout: this.volumePipeline.getBindGroupLayout(1),
             entries: [
@@ -292,6 +315,7 @@ export class NodeRenderer extends BaseRenderer {
                 { binding: 3, resource: this.volumesTemp[this.frame_i].getTextureView() },
                 { binding: 4, resource: this.colorTexture.createView() },
                 { binding: 5, resource: this.depthTexture.createView() },
+                { binding: 6, resource: { buffer: opacityBuffer } },
             ],
         });
 
@@ -394,20 +418,9 @@ export class NodeRenderer extends BaseRenderer {
 
     prepareBloom(mipLevels) {
         if (!this.bloomBindGroup) {
-            this.bloomSamplerDown = this.device.createSampler({
+            this.bloomSampler = this.device.createSampler({
                 magFilter: 'linear',
                 minFilter: 'linear',
-                addressModeU: 'clamp-to-edge',
-                addressModeV: 'clamp-to-edge',
-                mipmapFilter: 'linear',
-            });
-
-            this.bloomSamplerUp = this.device.createSampler({
-                magFilter: 'linear',
-                minFilter: 'linear',
-                addressModeU: 'repeat',
-                addressModeV: 'repeat',
-                mipmapFilter: 'linear',
             });
         }
 
@@ -420,15 +433,23 @@ export class NodeRenderer extends BaseRenderer {
                 layout: this.bloomDownsamplePipeline.getBindGroupLayout(0),
                 entries: [
                     { binding: 0, resource: this.bloomTexture.createView({ baseMipLevel: i, mipLevelCount: 1 }) },
-                    { binding: 1, resource: this.bloomSamplerDown },
+                    { binding: 1, resource: this.bloomSampler },
                 ],
             });
 
+            const intensityBuffer = this.device.createBuffer({
+                size: 4,
+                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            });
+    
+            this.device.queue.writeBuffer(intensityBuffer, 0, new Float32Array([this.bloomIntensity]));
+    
             const upsampleBindGroup = this.device.createBindGroup({
                 layout: this.bloomUpsamplePipeline.getBindGroupLayout(0),
                 entries: [
                     { binding: 0, resource: this.bloomTexture.createView({ baseMipLevel: i, mipLevelCount: 1 }) },
-                    { binding: 1, resource: this.bloomSamplerUp },
+                    { binding: 1, resource: this.bloomSampler },
+                    { binding: 2, resource: { buffer: intensityBuffer} },
                 ],
             });
 
@@ -565,7 +586,7 @@ export class NodeRenderer extends BaseRenderer {
             const bloomDowmsamplePass = bloomEncoder.beginRenderPass({
                 colorAttachments: [{
                     view: this.bloomTexture.createView({ baseMipLevel: i, mipLevelCount: 1 }),
-                    loadOp: 'load',
+                    loadOp: 'clear',
                     storeOp: 'store',
                 }],
             });
@@ -601,7 +622,7 @@ export class NodeRenderer extends BaseRenderer {
         this.finalPass = finalEncoder.beginRenderPass({
             colorAttachments: [{
                 view: this.context.getCurrentTexture().createView(),
-                loadOp: 'load',
+                loadOp: 'clear',
                 storeOp: 'store',
             }],
         });

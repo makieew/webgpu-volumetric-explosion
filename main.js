@@ -23,6 +23,7 @@ import { TurntableController } from './engine/controllers/TurntableController.js
 import { JSONLoader } from "./engine/loaders/JSONLoader.js";
 import { ImageLoader } from "./engine/loaders/ImageLoader.js";
 
+import { GUI } from "dat";
 
 const canvas = document.querySelector('canvas');
 // VOXEL DATA
@@ -77,7 +78,6 @@ volumeNode.addComponent(volume);
 
 scene.addChild(volumeNode);
 
-
 function update(t, dt) {
 	scene.traverse(node => {
 		for (const component of node.components) {
@@ -103,3 +103,9 @@ function resize({ displaySize: { width, height } }) {
 
 new ResizeSystem({ canvas, resize }).start();
 new UpdateSystem({ update, render }).start();
+
+const gui = new GUI();
+gui.add(renderer, 'volumeOpacity', 0, 40);
+gui.add(renderer, 'bloomIntensity', 0, 2);
+gui.add(renderer, 'bloomThreshold', 0, 3);
+// gui.add();
