@@ -24,7 +24,7 @@ struct CameraUniforms {
 @group(1) @binding(5) var depthTexture: texture_depth_2d;
 @group(1) @binding(6) var<uniform> opacity: f32;
 
-const NumSteps = 32u; //256
+const NumSteps = 16u; //256
 
 
 @vertex
@@ -112,7 +112,7 @@ fn computeResult(tmin: f32, tmax: f32, rayFrom: vec3f, rayDir: vec3f) -> vec4f {
 
     // noise
     // CURL - FIX
-    // let curlV = curlNoise(texCoord * 16.0, seed, 0.01);
+    let curlV = curlNoise(texCoord * 16.0, seed, 0.01);
     // let normFactor = length(curlV); // normalize?
 
     // WORLEY
@@ -125,7 +125,7 @@ fn computeResult(tmin: f32, tmax: f32, rayFrom: vec3f, rayDir: vec3f) -> vec4f {
     let normFactor = noiseFactor; // normalized values [-1, 1] -> [0, 1]
 
     // densitySample *= 1.0 - normFactor * 0.5; // densSamp = normFactor
-    tempSample *= 1.0 - normFactor * 0.3;
+    tempSample = mix(tempSample, tempSample * (1.0 - noiseFactor), 0.3);
     densitySample = mix(densitySample, densitySample * (1.0 - noiseFactor), 0.5);
 
     // densitySample = normFactor;

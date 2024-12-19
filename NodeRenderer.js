@@ -47,6 +47,52 @@ export class NodeRenderer extends BaseRenderer {
         this.recreateDepthTexture();
         this.recreateRenderTexture();
         this.recreateBloomTexture();
+
+        this.createTimestamp();
+    }
+
+    createTimestamp() {
+        this.querySet = this.device.createQuerySet({
+            type: "timestamp",
+            count: 12,  // 6 render passes
+        });
+
+        this.queryBuffer = this.device.createBuffer({
+            label: "Query",
+            size: 8 * 12,
+            usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC,
+        });
+
+        this.readBuffer = this.device.createBuffer({
+            label: "Read",
+            size: 8 * 12,
+            usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+        });
+    }
+
+    async copyBuffer() {
+        const copyEncoder = this.device.createCommandEncoder();
+        copyEncoder.copyBufferToBuffer(this.queryBuffer, 0, this.readBuffer, 0, this.queryBuffer.size);
+        this.device.queue.submit([copyEncoder.finish()]);
+        await this.readBuffer.mapAsync(GPUMapMode.READ);
+    }
+
+    async printTimestamp(renderInfo) {
+        if (this.readBuffer.mapState == "unmapped") {
+            const labels = ["Unlit", "Volume", "Bright", "Bloom Downsample", "Bloom Upsample", "Final"];
+            await this.copyBuffer();
+            const time = new BigInt64Array(this.readBuffer.getMappedRange());
+
+            let info = "Render Pass duration:<br><br>"
+            for (let i = 0; i < labels.length; i++) {
+                let duration = Number(time[i * 2 + 1] - time[i * 2])
+                duration /= 1_000_000
+                info += `${labels[i]}: ${duration.toFixed(2)} ms<br>`;
+            }
+
+            renderInfo.innerHTML = info;
+            this.readBuffer.unmap();
+        }
     }
 
     getCurrentVolume() {
@@ -160,7 +206,7 @@ export class NodeRenderer extends BaseRenderer {
             fragment: {
                 module,
                 entryPoint: 'fragment_main',
-                targets: [{ 
+                targets: [{
                     format: this.HDRformat,
                     blend: {
                         color: {
@@ -278,7 +324,7 @@ export class NodeRenderer extends BaseRenderer {
         this.device.queue.writeTexture(
             { texture: this.colorTexture },
             palette,
-            { bytesPerRow: 6 * 4 * 4}, // 6 * 4 ldr
+            { bytesPerRow: 6 * 4 * 4 }, // 6 * 4 ldr
             { width: 6, height: 1, depthOrArrayLayers: 1 }
         );
     }
@@ -441,15 +487,15 @@ export class NodeRenderer extends BaseRenderer {
                 size: 4,
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
-    
+
             this.device.queue.writeBuffer(intensityBuffer, 0, new Float32Array([this.bloomIntensity]));
-    
+
             const upsampleBindGroup = this.device.createBindGroup({
                 layout: this.bloomUpsamplePipeline.getBindGroupLayout(0),
                 entries: [
                     { binding: 0, resource: this.bloomTexture.createView({ baseMipLevel: i, mipLevelCount: 1 }) },
                     { binding: 1, resource: this.bloomSampler },
-                    { binding: 2, resource: { buffer: intensityBuffer} },
+                    { binding: 2, resource: { buffer: intensityBuffer } },
                 ],
             });
 
@@ -520,7 +566,7 @@ export class NodeRenderer extends BaseRenderer {
         this.unlitPass = unlitEncoder.beginRenderPass({
             colorAttachments: [{
                 view: this.renderTexture.createView(),
-                clearValue: [0, 0, 0, 1],   // white 1, 1, 1
+                clearValue: [0, 0, 0.5, 1],   // white 1, 1, 1
                 loadOp: 'clear',
                 storeOp: 'store',
             }],
@@ -529,6 +575,11 @@ export class NodeRenderer extends BaseRenderer {
                 depthClearValue: 1,
                 depthLoadOp: 'clear',
                 depthStoreOp: 'store',
+            },
+            timestampWrites: {
+                querySet: this.querySet,
+                beginningOfPassWriteIndex: 0,
+                endOfPassWriteIndex: 1,
             },
         });
 
@@ -549,6 +600,11 @@ export class NodeRenderer extends BaseRenderer {
                 loadOp: 'load',
                 storeOp: 'store',
             }],
+            timestampWrites: {
+                querySet: this.querySet,
+                beginningOfPassWriteIndex: 2,
+                endOfPassWriteIndex: 3,
+            }
         });
 
         this.volumesPass.setPipeline(this.volumePipeline);
@@ -562,7 +618,13 @@ export class NodeRenderer extends BaseRenderer {
         const brightEncoder = this.device.createCommandEncoder({ label: "Bright", });
         this.prepareBright();
 
-        const brightPass = brightEncoder.beginComputePass();
+        const brightPass = brightEncoder.beginComputePass({
+            timestampWrites: {
+                querySet: this.querySet,
+                beginningOfPassWriteIndex: 4,
+                endOfPassWriteIndex: 5,
+            },
+        });
 
         brightPass.setPipeline(this.brightPipeline);
         brightPass.setBindGroup(0, this.brightBindGroup);
@@ -583,12 +645,20 @@ export class NodeRenderer extends BaseRenderer {
 
         // downsampling
         for (let i = 1; i < mipLevels; i++) {
+            const writeStart = (i === 1) ? 6 : undefined;
+            const writeEnd = (i === mipLevels - 1) ? 7 : undefined;
+
             const bloomDowmsamplePass = bloomEncoder.beginRenderPass({
                 colorAttachments: [{
                     view: this.bloomTexture.createView({ baseMipLevel: i, mipLevelCount: 1 }),
                     loadOp: 'clear',
                     storeOp: 'store',
                 }],
+                timestampWrites: writeStart !== undefined || writeEnd !== undefined ? {
+                    querySet: this.querySet,
+                    beginningOfPassWriteIndex: writeStart,
+                    endOfPassWriteIndex: writeEnd,
+                } : undefined,
             });
 
             bloomDowmsamplePass.setPipeline(this.bloomDownsamplePipeline);
@@ -599,13 +669,22 @@ export class NodeRenderer extends BaseRenderer {
 
         // upsampling
         for (let i = mipLevels - 2; i >= 0; i--) {
+            const writeStart = (i === mipLevels - 2) ? 8 : undefined;
+            const writeEnd = (i === 0) ? 9 : undefined;
+
             const bloomUpsamplePass = bloomEncoder.beginRenderPass({
                 colorAttachments: [{
                     view: this.bloomTexture.createView({ baseMipLevel: i, mipLevelCount: 1 }),
                     loadOp: 'load',
                     storeOp: 'store',
                 }],
+                timestampWrites: writeStart !== undefined || writeEnd !== undefined ? {
+                    querySet: this.querySet,
+                    beginningOfPassWriteIndex: writeStart,
+                    endOfPassWriteIndex: writeEnd,
+                } : undefined,
             });
+
 
             bloomUpsamplePass.setPipeline(this.bloomUpsamplePipeline);
             bloomUpsamplePass.setBindGroup(0, this.bloomBindGroupsUpsample[i + 1]);
@@ -625,12 +704,19 @@ export class NodeRenderer extends BaseRenderer {
                 loadOp: 'clear',
                 storeOp: 'store',
             }],
+            timestampWrites: {
+                querySet: this.querySet,
+                beginningOfPassWriteIndex: 10,
+                endOfPassWriteIndex: 11,
+            },
         });
 
         this.finalPass.setPipeline(this.finalPipeline);
         this.finalPass.setBindGroup(0, this.finalBindGroup);
         this.finalPass.draw(6);
         this.finalPass.end();
+
+        finalEncoder.resolveQuerySet(this.querySet, 0, 12, this.queryBuffer, 0);
 
         this.device.queue.submit([finalEncoder.finish()]);
     }

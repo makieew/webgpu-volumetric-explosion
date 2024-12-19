@@ -95,6 +95,7 @@ function render() {
 
 	renderer.updateFrame(deltaTime);
 	renderer.render(scene, camera);
+	renderer.printTimestamp(document.getElementById("render-info"));
 }
 
 function resize({ displaySize: { width, height } }) {
