@@ -23,6 +23,7 @@ export class NodeRenderer extends BaseRenderer {
         this.frame_i = 0;
         this.frameInterval = 100; // ms
         this.timeElapsed = 0;
+        this.timeNoise = 0;
     }
 
     async initialize() {
@@ -335,6 +336,8 @@ export class NodeRenderer extends BaseRenderer {
         if (this.timeElapsed >= this.frameInterval) {
             this.frame_i = (this.frame_i + 1) % this.volumes.length;
             // console.log(this.frame_i);
+            this.timeNoise = performance.now() / 1000;
+            // console.log(this.timeNoise);
             this.timeElapsed -= this.frameInterval;
         }
     }
@@ -350,7 +353,13 @@ export class NodeRenderer extends BaseRenderer {
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
 
+        const timeBuffer = this.device.createBuffer({
+            size: 4,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        });
+
         this.device.queue.writeBuffer(opacityBuffer, 0, new Float32Array([this.volumeOpacity]));
+        this.device.queue.writeBuffer(timeBuffer, 0, new Float32Array([this.timeNoise]));
 
         const volumeBindGroup = this.device.createBindGroup({
             layout: this.volumePipeline.getBindGroupLayout(1),
@@ -362,6 +371,7 @@ export class NodeRenderer extends BaseRenderer {
                 { binding: 4, resource: this.colorTexture.createView() },
                 { binding: 5, resource: this.depthTexture.createView() },
                 { binding: 6, resource: { buffer: opacityBuffer } },
+                { binding: 7, resource: { buffer: timeBuffer } },
             ],
         });
 
@@ -573,6 +583,7 @@ export class NodeRenderer extends BaseRenderer {
             depthStencilAttachment: {
                 view: this.depthTexture.createView(),
                 depthClearValue: 1,
+                depthCompare: "less",
                 depthLoadOp: 'clear',
                 depthStoreOp: 'store',
             },

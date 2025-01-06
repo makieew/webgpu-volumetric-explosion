@@ -1,7 +1,8 @@
 struct VertexOutput {
     @builtin(position) Position: vec4f,
     @location(0) rayFrom: vec3f,
-    @location(1) rayTo: vec3f
+    @location(1) rayTo: vec3f,
+    @location(2) screenUv: vec2f,
 };
 
 struct Uniforms {
@@ -23,14 +24,15 @@ struct CameraUniforms {
 @group(1) @binding(4) var colorTexture: texture_1d<f32>;
 @group(1) @binding(5) var depthTexture: texture_depth_2d;
 @group(1) @binding(6) var<uniform> opacity: f32;
+@group(1) @binding(7) var<uniform> time: f32;
 
-const NumSteps = 16u; //256
+const NumSteps = 64u; //256
 
 
 @vertex
 fn vertex_main(@builtin(vertex_index) VertexIndex : u32) -> VertexOutput {
 
-  var pos = array<vec2f, 3>(
+  var pos = array(
     vec2f(-1.0, -1.0),
     vec2f( 3.0, -1.0),
     vec2f(-1.0,  3.0)
@@ -47,9 +49,10 @@ fn vertex_main(@builtin(vertex_index) VertexIndex : u32) -> VertexOutput {
   unproject(xy, uniforms.inverseMvp, &rayFrom, &rayTo);
 
   return VertexOutput(
-    worldPos,
+    vec4(pos[VertexIndex], 0.0, 1.0),
     rayFrom,
-    rayTo
+    rayTo,
+    vec2f(xy.x * 0.5 + 0.5, 1.0 - (xy.y * 0.5 + 0.5)), //test
   );
 }
 
@@ -69,7 +72,7 @@ fn quasiCubicSampling (volume: texture_3d<f32>, sampler: sampler, u: vec3f) -> v
     return textureSample(volume, sampler, (U - vec3<f32>(0.5)) / R);
 }
 
-fn computeResult(tmin: f32, tmax: f32, rayFrom: vec3f, rayDir: vec3f) -> vec4f {
+fn computeResult(tmin: f32, tmax: f32, rayFrom: vec3f, rayDir: vec3f, screenUv: vec2f) -> vec4f {
 
   var result = vec4f(0.0);
   var rayPos: vec3f = rayFrom;
@@ -97,13 +100,12 @@ fn computeResult(tmin: f32, tmax: f32, rayFrom: vec3f, rayDir: vec3f) -> vec4f {
     let texCoord: vec3f = (rayPos + 1.0) * 0.5;
 
     // depth testing
-    let clipPos = viewProjMatrix * vec4(rayPos, 1.0);
+    let clipPos = camera.projectionMatrix * camera.viewMatrix * uniforms.volumeMatrix * vec4f(rayPos, 1.0);
     let ndcPos = clipPos.xyz / clipPos.w;
-    let screenCoords = (ndcPos.xy * 0.5) + 0.5;
-    let screenDepth = 0.5 * (ndcPos.z + 1.0);
-
-    let depthValue = textureSample(depthTexture, mySampler, screenCoords);
-    //let depthWeight = select(0.0, 1.0, screenDepth < depthValue);
+    let screenDepth = ndcPos.z * 0.5 + 0.5;
+    
+    let depthValue = textureSample(depthTexture, mySampler, screenUv);
+    // let depthWeight = select(0.0, 1.0, screenDepth <= (depthValue + 0.004));
     let depthWeight = 1.0;
 
     //
@@ -111,18 +113,18 @@ fn computeResult(tmin: f32, tmax: f32, rayFrom: vec3f, rayDir: vec3f) -> vec4f {
     var tempSample = quasiCubicSampling(tempTexture, mySampler, texCoord).r;
 
     // noise
-    // CURL - FIX
-    let curlV = curlNoise(texCoord * 16.0, seed, 0.01);
-    // let normFactor = length(curlV); // normalize?
+    let animateNoise = texCoord + vec3<f32>(time * 0.1, time * 0.15, time * 0.2);
+    // CURL
+    // let curlV = curlNoise(animateNoise * 16.0, seed, 0.01);
 
     // WORLEY
     // texCoord + curl vec3 (* skalacija) curl
-    // let noiseFactor = 1.0 - worleyNoise(texCoord * 16.0 + curlV * 5, 1.5); // p, power
+    // let noiseFactor = 1.0 - worleyNoise(animateNoise * 16.0 + curlV * 5, 1.5); // p, power
     // let normFactor = noiseFactor; //TEST
 
     // PERLIN
-    let noiseFactor = perlinNoiseMultiOctave(texCoord, frequency, octaveCount, persistence, lacunarity, seed);
-    let normFactor = noiseFactor; // normalized values [-1, 1] -> [0, 1]
+    let noiseFactor = perlinNoiseMultiOctave(animateNoise, frequency, octaveCount, persistence, lacunarity, seed);
+    // let normFactor = (noiseFactor * 0.5) + 0.5; // normalized values [-1, 1] -> [0, 1]
 
     // densitySample *= 1.0 - normFactor * 0.5; // densSamp = normFactor
     tempSample = mix(tempSample, tempSample * (1.0 - noiseFactor), 0.3);
@@ -142,7 +144,7 @@ fn computeResult(tmin: f32, tmax: f32, rayFrom: vec3f, rayDir: vec3f) -> vec4f {
     accumulatedAlpha += (1.0 - accumulatedAlpha) * weightedDensity / f32(NumSteps) * opacity;
 
     // debug noise
-    //result = vec4f(vec3f(normFactor), 1.0);
+    // return vec4f(vec3f(normFactor), 1.0);
   }
 
   // was return result
@@ -150,7 +152,7 @@ fn computeResult(tmin: f32, tmax: f32, rayFrom: vec3f, rayDir: vec3f) -> vec4f {
 }
 
 @fragment
-fn fragment_main(@location(0) rayFrom: vec3f, @location(1) rayTo: vec3f) -> @location(0) vec4f {
+fn fragment_main(@location(0) rayFrom: vec3f, @location(1) rayTo: vec3f, @location(2) screenUv: vec2f) -> @location(0) vec4f {
   let rayDir: vec3f = rayTo - rayFrom;
   let tbounds: vec2f = intersectCube(rayFrom, rayDir);
   
@@ -158,7 +160,7 @@ fn fragment_main(@location(0) rayFrom: vec3f, @location(1) rayTo: vec3f) -> @loc
   let tmin: f32 = tbounds.x;
   let tmax: f32 = tbounds.y;
 
-  let computedResult = computeResult(tmin, tmax, rayFrom, rayDir);
+  let computedResult = computeResult(tmin, tmax, rayFrom, rayDir, screenUv);
   
   var result = mix(vec4f(0.0, 0.0, 0.0, 0.0), computedResult, validIntersection);
 
@@ -167,6 +169,13 @@ fn fragment_main(@location(0) rayFrom: vec3f, @location(1) rayTo: vec3f) -> @loc
   //let tminColor = vec3f(tmin, 0.0, 0.0); // Red channel for tmin
   //let tmaxColor = vec3f(0.0, 0.0, tmax); // Green channel for tmax
   //let finalColor = vec4f(tminColor + tmaxColor, 1); // Combine them with full alpha
+
+  // Depth testing
+  // var result = vec4f(c, a);
+  // let depthValue = textureSample(depthTexture, mySampler, screenUv);
+  // linearized depth values for visualization
+  // let c = vec3f((2.0 * 0.1) / (100.0 + 0.1 - depthValue * (100.0 - 0.1)));
+  // let a = 1.0;
 
   return result;
 }
