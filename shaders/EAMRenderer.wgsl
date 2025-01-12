@@ -25,8 +25,11 @@ struct CameraUniforms {
 @group(1) @binding(5) var depthTexture: texture_depth_2d;
 @group(1) @binding(6) var<uniform> opacity: f32;
 @group(1) @binding(7) var<uniform> time: f32;
+@group(1) @binding(8) var<uniform> NumSteps: u32;
+@group(1) @binding(9) var<uniform> noiseType: u32;
+@group(1) @binding(10) var<uniform> showNoise: u32;
 
-const NumSteps = 64u; //256
+// const NumSteps = 64u; //256
 
 
 @vertex
@@ -114,17 +117,18 @@ fn computeResult(tmin: f32, tmax: f32, rayFrom: vec3f, rayDir: vec3f, screenUv: 
 
     // noise
     let animateNoise = texCoord + vec3<f32>(time * 0.1, time * 0.15, time * 0.2);
-    // CURL
-    // let curlV = curlNoise(animateNoise * 16.0, seed, 0.01);
 
-    // WORLEY
+    var noiseFactor = 0.0;
+    if (noiseType == 1u) {    // PERLIN
+      noiseFactor = perlinNoiseMultiOctave(animateNoise, frequency, octaveCount, persistence, lacunarity, seed);
+      // let normFactor = (noiseFactor * 0.5) + 0.5; // normalized values [-1, 1] -> [0, 1]
+    } else if (noiseType == 2u) {   // WORLEY
+      noiseFactor = 1.0 - worleyNoise(animateNoise * 16.0, 1.5); // p, power
+    } else if (noiseType == 3u) {   // WORLEY + CURL
     // texCoord + curl vec3 (* skalacija) curl
-    // let noiseFactor = 1.0 - worleyNoise(animateNoise * 16.0 + curlV * 5, 1.5); // p, power
-    // let normFactor = noiseFactor; //TEST
-
-    // PERLIN
-    let noiseFactor = perlinNoiseMultiOctave(animateNoise, frequency, octaveCount, persistence, lacunarity, seed);
-    // let normFactor = (noiseFactor * 0.5) + 0.5; // normalized values [-1, 1] -> [0, 1]
+      let curlV = curlNoise(animateNoise * 16.0, seed, 0.01);
+      noiseFactor = 1.0 - worleyNoise(animateNoise * 16.0 + curlV * 5, 1.5); // p, power
+    }
 
     // densitySample *= 1.0 - normFactor * 0.5; // densSamp = normFactor
     tempSample = mix(tempSample, tempSample * (1.0 - noiseFactor), 0.3);
@@ -144,7 +148,9 @@ fn computeResult(tmin: f32, tmax: f32, rayFrom: vec3f, rayDir: vec3f, screenUv: 
     accumulatedAlpha += (1.0 - accumulatedAlpha) * weightedDensity / f32(NumSteps) * opacity;
 
     // debug noise
-    // return vec4f(vec3f(normFactor), 1.0);
+    if (showNoise == 1u) {
+      return vec4f(vec3f(noiseFactor), 1.0);
+    }
   }
 
   // was return result

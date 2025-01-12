@@ -5,7 +5,6 @@ import { getLocalModelMatrix, getGlobalViewMatrix, getProjectionMatrix, getModel
 import { BaseRenderer } from './engine/renderers/BaseRenderer.js';
 
 // depth
-// dat.gui
 // evalvacija
 
 const vertexBufferLayout = {
@@ -16,12 +15,18 @@ const vertexBufferLayout = {
     ],
 };
 
+const noiseTypeMapping = {
+    "Perlin": 1,
+    "Worley": 2,
+    "Worley + Curl": 3,
+};
+
 export class NodeRenderer extends BaseRenderer {
 
     constructor(canvas) {
         super(canvas);
         this.frame_i = 0;
-        this.frameInterval = 100; // ms
+        this.animationSpeed = 100; // ms
         this.timeElapsed = 0;
         this.timeNoise = 0;
     }
@@ -34,9 +39,14 @@ export class NodeRenderer extends BaseRenderer {
         this.volumes = [];
         this.volumesTemp = [];
 
+        // settings
+        this.numSteps = 32;
         this.volumeOpacity = 20.0;
         this.bloomIntensity = 0.8;
         this.bloomThreshold = 1.0;
+        this.noiseType = 'Perlin';
+        this.showNoise = false;
+        this.stopAnimation = false;
 
         this.unlitPipeline = await this.initializeUnlitPipeline();
         this.volumePipeline = await this.initializeVolumePipeline();
@@ -55,7 +65,7 @@ export class NodeRenderer extends BaseRenderer {
     createTimestamp() {
         this.querySet = this.device.createQuerySet({
             type: "timestamp",
-            count: 12,  // 6 render passes
+            count: 12,  // 6 render passes * 2 timestamps
         });
 
         this.queryBuffer = this.device.createBuffer({
@@ -333,12 +343,12 @@ export class NodeRenderer extends BaseRenderer {
     updateFrame(deltaTime) {
         this.timeElapsed += deltaTime;
 
-        if (this.timeElapsed >= this.frameInterval) {
+        if (this.timeElapsed >= this.animationSpeed && !this.stopAnimation) {
             this.frame_i = (this.frame_i + 1) % this.volumes.length;
             // console.log(this.frame_i);
             this.timeNoise = performance.now() / 1000;
             // console.log(this.timeNoise);
-            this.timeElapsed -= this.frameInterval;
+            this.timeElapsed -= this.animationSpeed;
         }
     }
 
@@ -358,8 +368,26 @@ export class NodeRenderer extends BaseRenderer {
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
 
+        const stepsBuffer = this.device.createBuffer({
+            size: 4,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        });
+
+        const noiseBuffer = this.device.createBuffer({
+            size: 4,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        });
+
+        const showNoiseBuffer = this.device.createBuffer({
+            size: 4,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        });
+
         this.device.queue.writeBuffer(opacityBuffer, 0, new Float32Array([this.volumeOpacity]));
         this.device.queue.writeBuffer(timeBuffer, 0, new Float32Array([this.timeNoise]));
+        this.device.queue.writeBuffer(stepsBuffer, 0, new Uint32Array([this.numSteps]));
+        this.device.queue.writeBuffer(noiseBuffer, 0, new Uint32Array([noiseTypeMapping[this.noiseType]]));
+        this.device.queue.writeBuffer(showNoiseBuffer, 0, new Uint32Array([this.showNoise == true ? 1 : 0]));
 
         const volumeBindGroup = this.device.createBindGroup({
             layout: this.volumePipeline.getBindGroupLayout(1),
@@ -372,6 +400,9 @@ export class NodeRenderer extends BaseRenderer {
                 { binding: 5, resource: this.depthTexture.createView() },
                 { binding: 6, resource: { buffer: opacityBuffer } },
                 { binding: 7, resource: { buffer: timeBuffer } },
+                { binding: 8, resource: { buffer: stepsBuffer } },
+                { binding: 9, resource: { buffer: noiseBuffer } },
+                { binding: 10, resource: { buffer: showNoiseBuffer } }
             ],
         });
 

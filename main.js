@@ -106,7 +106,12 @@ new ResizeSystem({ canvas, resize }).start();
 new UpdateSystem({ update, render }).start();
 
 const gui = new GUI();
+gui.add(renderer, 'numSteps', ['16', '32', '64', '128', '256']);
 gui.add(renderer, 'volumeOpacity', 0, 40);
 gui.add(renderer, 'bloomIntensity', 0, 2);
 gui.add(renderer, 'bloomThreshold', 0, 3);
+gui.add(renderer, 'animationSpeed', 50, 150);
+gui.add(renderer, 'noiseType', ['Perlin', 'Worley', 'Worley + Curl']);
+gui.add(renderer, 'showNoise');
+gui.add(renderer, 'stopAnimation');
 // gui.add();
