@@ -21,6 +21,12 @@ const noiseTypeMapping = {
     "Worley + Curl": 3,
 };
 
+const resolutionTypeMapping = {
+    "Full": 1,
+    "Halved": 2,
+    "Quartered": 4,
+};
+
 export class NodeRenderer extends BaseRenderer {
 
     constructor(canvas) {
@@ -41,6 +47,9 @@ export class NodeRenderer extends BaseRenderer {
 
         // settings
         this.numSteps = 32;
+        this.resolution = 'Halved';
+        this.pastRes = 'Halved';
+        this.resolutionFactor = resolutionTypeMapping[this.resolution];
         this.volumeOpacity = 20.0;
         this.bloomIntensity = 0.8;
         this.bloomThreshold = 1.0;
@@ -274,7 +283,7 @@ export class NodeRenderer extends BaseRenderer {
         this.depthTexture?.destroy();
         this.depthTexture = this.device.createTexture({
             format: 'depth24plus',
-            size: [this.canvas.width, this.canvas.height],
+            size: [this.canvas.width / this.resolutionFactor, this.canvas.height / this.resolutionFactor],
             usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
         });
     }
@@ -283,7 +292,7 @@ export class NodeRenderer extends BaseRenderer {
         this.renderTexture?.destroy();
         this.renderTexture = this.device.createTexture({
             format: this.HDRformat,
-            size: [this.canvas.width, this.canvas.height],
+            size: [this.canvas.width / this.resolutionFactor, this.canvas.height / this.resolutionFactor],
             usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
         });
     }
@@ -292,8 +301,8 @@ export class NodeRenderer extends BaseRenderer {
         this.bloomTexture?.destroy();
         this.bloomTexture = this.device.createTexture({
             format: this.HDRformat,
-            size: [this.canvas.width, this.canvas.height],
-            mipLevelCount: Math.ceil(Math.log2(Math.max(this.canvas.width, this.canvas.height))),
+            size: [this.canvas.width / this.resolutionFactor, this.canvas.height / this.resolutionFactor],
+            mipLevelCount: Math.ceil(Math.log2(Math.max(this.canvas.width / this.resolutionFactor, this.canvas.height / this.resolutionFactor))),
             usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING,
         });
     }
@@ -585,10 +594,14 @@ export class NodeRenderer extends BaseRenderer {
     }
 
     render(scene, camera) {
-        if (this.depthTexture.width !== this.canvas.width || this.depthTexture.height !== this.canvas.height) {
+        if (this.depthTexture.width !== Math.floor(this.canvas.width / this.resolutionFactor) || this.depthTexture.height !== Math.floor(this.canvas.height / this.resolutionFactor) || this.resolution !== this.pastRes) {
+            this.resolutionFactor = resolutionTypeMapping[this.resolution];
+
             this.recreateDepthTexture();
             this.recreateRenderTexture();
             this.recreateBloomTexture();
+
+            this.pastRes = this.resolution;
         }
 
         // CAMERA

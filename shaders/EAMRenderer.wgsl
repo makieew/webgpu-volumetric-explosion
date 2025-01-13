@@ -123,37 +123,29 @@ fn computeResult(tmin: f32, tmax: f32, rayFrom: vec3f, rayDir: vec3f, screenUv: 
       noiseFactor = perlinNoiseMultiOctave(animateNoise, frequency, octaveCount, persistence, lacunarity, seed);
       // let normFactor = (noiseFactor * 0.5) + 0.5; // normalized values [-1, 1] -> [0, 1]
     } else if (noiseType == 2u) {   // WORLEY
-      noiseFactor = 1.0 - worleyNoise(animateNoise * 16.0, 1.5); // p, power
+      noiseFactor = 1.0 - worleyNoise(animateNoise * 10.0, 1.5); // p, power
     } else if (noiseType == 3u) {   // WORLEY + CURL
     // texCoord + curl vec3 (* skalacija) curl
-      let curlV = curlNoise(animateNoise * 16.0, seed, 0.01);
-      noiseFactor = 1.0 - worleyNoise(animateNoise * 16.0 + curlV * 5, 1.5); // p, power
+      let curlV = curlNoise(animateNoise * 10.0, seed, 0.01);
+      noiseFactor = 1.0 - worleyNoise(animateNoise * 10.0 + curlV * 5, 1.5); // p, power
     }
 
     // densitySample *= 1.0 - normFactor * 0.5; // densSamp = normFactor
     tempSample = mix(tempSample, tempSample * (1.0 - noiseFactor), 0.3);
     densitySample = mix(densitySample, densitySample * (1.0 - noiseFactor), 0.5);
-
-    // densitySample = normFactor;
-
+    
     var color: vec3f = transferFunction(tempSample, densitySample);
-
-    //let rgbTemp = result.rgb + (1.0 - result.a) * color * densitySample / f32(NumSteps) * opacity;
-    //let alpha = result.a + (1.0 - result.a) * densitySample / f32(NumSteps) * opacity;
-
-    //result = vec4f(rgbTemp, alpha);
 
     let weightedDensity = densitySample * depthWeight;
     accumulatedColor += (1.0 - accumulatedAlpha) * color * weightedDensity / f32(NumSteps) * opacity;
     accumulatedAlpha += (1.0 - accumulatedAlpha) * weightedDensity / f32(NumSteps) * opacity;
 
-    // debug noise
+    // debug show noise
     if (showNoise == 1u) {
       return vec4f(vec3f(noiseFactor), 1.0);
     }
   }
 
-  // was return result
   return vec4f(accumulatedColor, accumulatedAlpha);
 }
 
