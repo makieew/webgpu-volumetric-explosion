@@ -108,8 +108,8 @@ fn computeResult(tmin: f32, tmax: f32, rayFrom: vec3f, rayDir: vec3f, screenUv: 
     let screenDepth = ndcPos.z * 0.5 + 0.5;
     
     let depthValue = textureSample(depthTexture, mySampler, screenUv);
-    // let depthWeight = select(0.0, 1.0, screenDepth <= (depthValue + 0.004));
-    let depthWeight = 1.0;
+    let depthWeight = select(0.0, 1.0, screenDepth <= (depthValue + 0.004));
+    // let depthWeight = 1.0;
 
     //
     var densitySample = textureSample(myTexture, mySampler, texCoord).r;
