@@ -1,4 +1,4 @@
-// implementation of 3D Perlin Noise by MurmurHash
+// implementation of 3D Perlin Noise MurmurHash
 fn hash1D(x: u32, seed: u32) -> u32 {
   let m: u32 = 0x5bd1e995u;
   var hash = seed;

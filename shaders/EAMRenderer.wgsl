@@ -84,10 +84,10 @@ fn computeResult(tmin: f32, tmax: f32, rayFrom: vec3f, rayDir: vec3f, screenUv: 
   let stepSize: f32 = dist / f32(NumSteps);
 
   // perlin parameters
-  let frequency: i32 = 4;
-  let octaveCount: i32 = 2;
-  let persistence: f32 = 0.5;
-  let lacunarity: f32 = 2;
+  let frequency: i32 = 4; //4
+  let octaveCount: i32 = 2; //2
+  let persistence: f32 = 0.5; //0.5
+  let lacunarity: f32 = 2; //2
   let seed: u32 = 0x578437adu;
 
   // depth testing
@@ -121,7 +121,7 @@ fn computeResult(tmin: f32, tmax: f32, rayFrom: vec3f, rayDir: vec3f, screenUv: 
     var noiseFactor = 0.0;
     if (noiseType == 1u) {    // PERLIN
       noiseFactor = perlinNoiseMultiOctave(animateNoise, frequency, octaveCount, persistence, lacunarity, seed);
-      // let normFactor = (noiseFactor * 0.5) + 0.5; // normalized values [-1, 1] -> [0, 1]
+      noiseFactor = (noiseFactor * 0.5) + 0.5; // normalized values [-1, 1] -> [0, 1]
     } else if (noiseType == 2u) {   // WORLEY
       noiseFactor = 1.0 - worleyNoise(animateNoise * 10.0, 1.5); // p, power
     } else if (noiseType == 3u) {   // WORLEY + CURL
