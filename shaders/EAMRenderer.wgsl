@@ -29,8 +29,6 @@ struct CameraUniforms {
 @group(1) @binding(9) var<uniform> noiseType: u32;
 @group(1) @binding(10) var<uniform> showNoise: u32;
 
-// const NumSteps = 64u; //256
-
 
 @vertex
 fn vertex_main(@builtin(vertex_index) VertexIndex : u32) -> VertexOutput {
@@ -60,7 +58,6 @@ fn vertex_main(@builtin(vertex_index) VertexIndex : u32) -> VertexOutput {
 }
 
 fn transferFunction(tempSample: f32, densitySample: f32) -> vec3f {
-  // +alpha +skalacija slider
   let color = textureSample(colorTexture, mySampler, tempSample).rgb;
   let densColor = color * densitySample;
 
@@ -108,14 +105,14 @@ fn computeResult(tmin: f32, tmax: f32, rayFrom: vec3f, rayDir: vec3f, screenUv: 
     let screenDepth = ndcPos.z * 0.5 + 0.5;
     
     let depthValue = textureSample(depthTexture, mySampler, screenUv);
-    let depthWeight = select(0.0, 1.0, screenDepth <= (depthValue + 0.004));
-    // let depthWeight = 1.0;
+    let depthWeight = select(0.0, 1.0, screenDepth <= (depthValue + 0.008));
+    // let depthWeight = 1.0; // no depth test
 
     //
     var densitySample = textureSample(myTexture, mySampler, texCoord).r;
     var tempSample = quasiCubicSampling(tempTexture, mySampler, texCoord).r;
 
-    // noise
+    // noise - add noise factor impact?
     let animateNoise = texCoord + vec3<f32>(time * 0.1, time * 0.15, time * 0.2);
 
     var noiseFactor = 0.0;
@@ -123,15 +120,13 @@ fn computeResult(tmin: f32, tmax: f32, rayFrom: vec3f, rayDir: vec3f, screenUv: 
       noiseFactor = perlinNoiseMultiOctave(animateNoise, frequency, octaveCount, persistence, lacunarity, seed);
       noiseFactor = (noiseFactor * 0.5) + 0.5; // normalized values [-1, 1] -> [0, 1]
     } else if (noiseType == 2u) {   // WORLEY
-      noiseFactor = 1.0 - worleyNoise(animateNoise * 10.0, 1.5); // p, power
+      noiseFactor = worleyNoise(animateNoise * 10.0, 1.5); // p, power = 1.5
     } else if (noiseType == 3u) {   // WORLEY + CURL
-    // texCoord + curl vec3 (* skalacija) curl
-      let curlV = curlNoise(animateNoise * 10.0, seed, 0.01);
-      noiseFactor = 1.0 - worleyNoise(animateNoise * 10.0 + curlV * 5, 1.5); // p, power
+      let curlV = curlNoise(animateNoise * 10.0, seed, 0.01); // delta 0.01
+      noiseFactor = worleyNoise(animateNoise * 10.0 + curlV * 5, 1.5); // p, power
     }
 
-    // densitySample *= 1.0 - normFactor * 0.5; // densSamp = normFactor
-    tempSample = mix(tempSample, tempSample * (1.0 - noiseFactor), 0.3);
+    tempSample = mix(tempSample, tempSample * (1.0 - noiseFactor), 0.5);
     densitySample = mix(densitySample, densitySample * (1.0 - noiseFactor), 0.5);
     
     var color: vec3f = transferFunction(tempSample, densitySample);
@@ -142,7 +137,7 @@ fn computeResult(tmin: f32, tmax: f32, rayFrom: vec3f, rayDir: vec3f, screenUv: 
 
     // debug show noise
     if (showNoise == 1u) {
-      return vec4f(vec3f(noiseFactor), 1.0);
+      return vec4f(vec3f(1.0 - noiseFactor), 1.0);
     }
   }
 
@@ -167,13 +162,6 @@ fn fragment_main(@location(0) rayFrom: vec3f, @location(1) rayTo: vec3f, @locati
   //let tminColor = vec3f(tmin, 0.0, 0.0); // Red channel for tmin
   //let tmaxColor = vec3f(0.0, 0.0, tmax); // Green channel for tmax
   //let finalColor = vec4f(tminColor + tmaxColor, 1); // Combine them with full alpha
-
-  // Depth testing
-  // var result = vec4f(c, a);
-  // let depthValue = textureSample(depthTexture, mySampler, screenUv);
-  // linearized depth values for visualization
-  // let c = vec3f((2.0 * 0.1) / (100.0 + 0.1 - depthValue * (100.0 - 0.1)));
-  // let a = 1.0;
 
   return result;
 }

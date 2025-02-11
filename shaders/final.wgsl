@@ -46,9 +46,8 @@ fn fragment_main(@location(0) texcoords : vec2f) -> @location(0) vec4f {
     let hdrColor = original + bloom;
 
     // tone-mapping FIX
-    let toneMapped = hdrColor * exposure; // fix bit grayish
+    let toneMapped = vec3f(1.0) - exp(-hdrColor * exposure);
+    let result = vec4f(pow(toneMapped, vec3f(1.0 / gamma)), 1); // fix - everything lighter ??
 
-    let result = vec4f(pow(toneMapped.rgb, vec3f(1.0 / gamma)), 1); // fix - everything lighter ??
-
-    return vec4f(hdrColor, 1.0);
+    return vec4f(hdrColor, 1);
 }

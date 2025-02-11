@@ -1,4 +1,4 @@
-// Curl noise - FIX
+// Curl noise
 fn curlNoise(position: vec3f, seed: u32, delta: f32) -> vec3f {
     let value1 = perlinNoise(position + vec3f(-delta, -delta, -delta), seed);
     let value2 = perlinNoise(position + vec3f(delta, -delta, -delta), seed);

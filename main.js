@@ -1,10 +1,6 @@
-// import { mat4 } from 'wgpu-matrix';
 import { loadVoxelData } from "./loaders.js";
 import { NodeRenderer } from "./NodeRenderer.js";
 
-// TEST
-// import { vec3, mat4 } from 'glm.js';
-// import { getGlobalModelMatrix } from './engine/core/SceneUtils.js';
 import {
 	Camera,
 	Material,
@@ -40,10 +36,10 @@ const scene = new Node();
 
 const camera = new Node();
 camera.addComponent(new Transform({
-    translation: [0, 1, 0],
+    translation: [0, 10, 2],
 }));
 camera.addComponent(new Camera({near: 0.1, far: 100}));
-camera.addComponent(new TurntableController(camera, canvas, { distance: 10, pitch: -0.1, }));
+camera.addComponent(new TurntableController(camera, canvas, { distance: 15, pitch: -0.15, yaw: -1.57 }));
 
 scene.addChild(camera);
 
@@ -73,7 +69,7 @@ scene.addChild(floor);
 
 const volume = renderer.getCurrentVolume();
 const volumeNode = new Node();
-volumeNode.addComponent(new Transform({ translation: [0, 5, 0], scale: [5, 5, 5], })); // volume should sit on top of the floor
+volumeNode.addComponent(new Transform({ translation: [0, 5, 0], scale: [5, 5, 5]})); // volume should sit on top of the floor
 volumeNode.addComponent(volume);
 
 scene.addChild(volumeNode);

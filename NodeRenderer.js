@@ -4,8 +4,6 @@ import { Camera } from "./engine/core/Camera.js";
 import { getLocalModelMatrix, getGlobalViewMatrix, getProjectionMatrix, getModels } from './engine/core/SceneUtils.js';
 import { BaseRenderer } from './engine/renderers/BaseRenderer.js';
 
-// depth
-// evalvacija
 
 const vertexBufferLayout = {
     arrayStride: 20,
@@ -46,14 +44,14 @@ export class NodeRenderer extends BaseRenderer {
         this.volumesTemp = [];
 
         // settings
-        this.numSteps = 32;
-        this.resolution = 'Halved';
-        this.pastRes = 'Halved';
+        this.numSteps = 64;
+        this.resolution = 'Quartered';
+        this.pastRes = 'Quartered';
         this.resolutionFactor = resolutionTypeMapping[this.resolution];
-        this.volumeOpacity = 20.0;
+        this.volumeOpacity = 30.0;
         this.bloomIntensity = 0.8;
         this.bloomThreshold = 1.0;
-        this.noiseType = 'Perlin';
+        this.noiseType = 'Worley + Curl';
         this.showNoise = false;
         this.stopAnimation = false;
 
@@ -153,7 +151,6 @@ export class NodeRenderer extends BaseRenderer {
     }
 
     async initializeVolumePipeline() {
-        // transparency, blending, source alpha
         const main = await this.fetchShader("./shaders/EAMRenderer.wgsl");
         const raymarching = await this.fetchShader("./shaders/raymarching.wgsl");
         const perlin = await this.fetchShader("./shaders/perlin.wgsl");
@@ -520,7 +517,6 @@ export class NodeRenderer extends BaseRenderer {
             });
         }
 
-        // console.log(this.renderTexture);
         const bloomBindGroupsDownsample = [];
         const bloomBindGroupsUpsample = [];
 
@@ -620,7 +616,7 @@ export class NodeRenderer extends BaseRenderer {
         this.unlitPass = unlitEncoder.beginRenderPass({
             colorAttachments: [{
                 view: this.renderTexture.createView(),
-                clearValue: [0, 0, 0.5, 1],   // white 1, 1, 1
+                clearValue: [0.1, 0.3, 0.8, 1],   // white 1, 1, 1
                 loadOp: 'clear',
                 storeOp: 'store',
             }],
@@ -785,7 +781,6 @@ export class NodeRenderer extends BaseRenderer {
         if (node.getComponentOfType(Volume) && isVolumePass) {
             const { volumeUniformBuffer, volumeBindGroup } = this.prepareVolume(node);
             // volume pipeline
-            // transparency
             const swapMatrix = new Float32Array([
                 0, 1, 0, 0,     // Swapping X and Y
                 1, 0, 0, 0,
