@@ -109,7 +109,7 @@ fn computeResult(tmin: f32, tmax: f32, rayFrom: vec3f, rayDir: vec3f, screenUv: 
     // let depthWeight = 1.0; // no depth test
 
     //
-    var densitySample = textureSample(myTexture, mySampler, texCoord).r;
+    var densitySample = quasiCubicSampling(myTexture, mySampler, texCoord).r;
     var tempSample = quasiCubicSampling(tempTexture, mySampler, texCoord).r;
 
     // noise - add noise factor impact?
